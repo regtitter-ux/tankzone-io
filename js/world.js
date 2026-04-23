@@ -130,35 +130,23 @@ function militaryBaseLayout(chunkCX, chunkCY) {
   }
 
   // Enemies staged across the layers. Tiers escalate towards the core so the
-  // final push is a proper boss fight.
+  // final push is a proper boss fight. Counts are 20× the original fortress
+  // plan — scattered with a random radial offset inside each band so the
+  // swarm doesn't stack on a single circle.
   const enemies = [];
-  // Outer patrols (between outer & middle ring).
-  const outerCount = 22;
-  for (let i = 0; i < outerCount; i++) {
-    const a = (i / outerCount) * TAU + 0.15;
-    const r = (1200 + 800) / 2;
-    enemies.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r, tierBonus: 1 });
-  }
-  // Middle guards (between middle & inner ring).
-  const midCount = 16;
-  for (let i = 0; i < midCount; i++) {
-    const a = (i / midCount) * TAU + 0.5;
-    const r = (800 + 450) / 2;
-    enemies.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r, tierBonus: 2 });
-  }
-  // Inner guards (between inner ring & core).
-  const innerCount = 12;
-  for (let i = 0; i < innerCount; i++) {
-    const a = (i / innerCount) * TAU + 0.9;
-    const r = 300;
-    enemies.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r, tierBonus: 3 });
-  }
-  // Core elites clustered by the chest.
-  const eliteCount = 6;
-  for (let i = 0; i < eliteCount; i++) {
-    const a = (i / eliteCount) * TAU;
-    enemies.push({ x: cx + Math.cos(a) * 130, y: cy + Math.sin(a) * 130, tierBonus: 4 });
-  }
+  const scatter = (count, tierBonus, rLo, rHi) => {
+    for (let i = 0; i < count; i++) {
+      const h1 = hash2D(i, chunkCX + chunkCY * 131, World.seed + 881 + tierBonus * 7);
+      const h2 = hash2D(i, chunkCX * 97 + chunkCY, World.seed + 991 + tierBonus * 5);
+      const a  = (i / count) * TAU + (h1 - 0.5) * (TAU / count) * 1.6;
+      const r  = rLo + h2 * (rHi - rLo);
+      enemies.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r, tierBonus });
+    }
+  };
+  scatter(440, 1, 820,  1180);   // outer patrols (between outer & middle ring)
+  scatter(320, 2, 470,   780);   // middle guards (between middle & inner ring)
+  scatter(240, 3, 180,   430);   // inner guards
+  scatter(120, 4,  60,   160);   // core elites clustered around the chest
 
   return { outerR: 1200, walls, core, enemies, centerX: cx, centerY: cy };
 }
