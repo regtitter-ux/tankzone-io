@@ -80,19 +80,10 @@ const Game = {
       if (/^Digit[0-9]$/.test(code)) return 'digit' + code.slice(5);
       return null;
     };
-    // Two-digit skill combo: if a digit is pressed while another is held, try
-    // to cast the two-digit index first. The single-digit path is still the
-    // default when no other digit is held.
-    const heldDigits = [];
-    const castDigits = (digits) => {
-      if (!this.player) return;
-      if (digits.length === 1) {
-        Skills.tryCast(this.player, parseInt(digits[0], 10) - 1);
-      } else if (digits.length >= 2) {
-        const idx = parseInt(digits.slice(0, 2).join(''), 10) - 1;
-        Skills.tryCast(this.player, idx);
-      }
-    };
+    // Two-digit skill combo: if a digit is pressed while another is held, the
+    // two-digit index takes priority. `heldDigits` is an ordered stack used
+    // both on edge (first press) and every frame while held — see Game.update.
+    this.heldDigits = [];
     window.addEventListener('keydown', e => {
       const a = codeToAction(e.code);
       if (!a) return;
@@ -105,8 +96,8 @@ const Game = {
         if (a === 'shop')      UI.openShop();
         if (a.startsWith('digit')) {
           const d = a.slice(5);
-          if (!heldDigits.includes(d)) heldDigits.push(d);
-          castDigits(heldDigits);
+          if (!this.heldDigits.includes(d)) this.heldDigits.push(d);
+          this.castHeldSkill();
         }
       }
       this.input.keys.add(a);
@@ -121,12 +112,12 @@ const Game = {
       if (a === 'interact') this.input.interact = false;
       if (a.startsWith('digit')) {
         const d = a.slice(5);
-        const i = heldDigits.indexOf(d);
-        if (i >= 0) heldDigits.splice(i, 1);
+        const i = this.heldDigits.indexOf(d);
+        if (i >= 0) this.heldDigits.splice(i, 1);
       }
     });
     // Drop all held keys if window loses focus (avoids "stuck" inputs).
-    window.addEventListener('blur', () => { this.input.keys.clear(); this.input.shooting = false; });
+    window.addEventListener('blur', () => { this.input.keys.clear(); this.input.shooting = false; this.heldDigits.length = 0; });
     this.canvas.addEventListener('mousemove', e => {
       const r = this.canvas.getBoundingClientRect();
       this.input.mouseX = e.clientX - r.left;
@@ -190,6 +181,19 @@ const Game = {
     this.ensureChunksAroundPlayer();
     // Immediate first write so a refresh within seconds still resumes.
     Save.write();
+  },
+
+  // Called every frame + on digit edge: tries to cast the current held-key
+  // skill (single or two-digit combo). Rate-limited by skill.cooldown so it's
+  // safe to call on every frame while a key is held.
+  castHeldSkill() {
+    if (!this.player || !this.heldDigits.length) return;
+    if (this.heldDigits.length >= 2) {
+      const idx = parseInt(this.heldDigits.slice(0, 2).join(''), 10) - 1;
+      Skills.tryCast(this.player, idx);
+    } else {
+      Skills.tryCast(this.player, parseInt(this.heldDigits[0], 10) - 1);
+    }
   },
 
   ensureChunksAroundPlayer() {
@@ -356,6 +360,8 @@ const Game = {
     for (const pa of this.particles) pa.update(dt);
     for (const fx of this.effects) fx.update(dt);
     Skills.tick(this.player, dt);
+    // Repeat-fire the currently-held skill hotkey while down.
+    this.castHeldSkill();
     // Fade out track marks.
     for (const t of this.tracks) t.life -= dt;
     if (this.tracks.length > 300) this.tracks.splice(0, this.tracks.length - 300);

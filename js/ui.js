@@ -175,7 +175,9 @@ const UI = {
     });
   },
 
-  // Refresh cooldown overlays. Called every frame from UI.update().
+  // Refresh cooldown overlays. Skills whose configured cooldown is under a
+  // threshold are hold-to-cast; we don't flicker a shade for their internal
+  // rate limit. Anything with a real (visible) cooldown still shows the shade.
   updateSkillCells() {
     const el = document.getElementById('skills');
     if (!el) return;
@@ -185,7 +187,8 @@ const UI = {
       const cell = cells[i];
       const s = SKILLS[i]; if (!s) continue;
       const cd = (p && p.skillCd && p.skillCd[s.id]) || 0;
-      if (cd > 0) {
+      const showShade = cd > 0 && s.cooldown > 0.4;
+      if (showShade) {
         cell.classList.add('cooling');
         cell.classList.remove('ready');
         cell.querySelector('.cd-shade').textContent = cd.toFixed(1);

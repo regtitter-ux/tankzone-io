@@ -157,17 +157,20 @@ function castChainLightning(caster, damage) {
 
 // Ordered list. Keyboard digit N (1..9) casts SKILLS[N-1]. Two-digit combos
 // (e.g. 1+0) will reach indices 9+ once those are defined.
+// Skills are hold-to-cast. The `cooldown` field here is an internal rate
+// limit so spamming a key can't spawn 60 effects per second — not a gameplay
+// cooldown for the user to wait out. Values are tiny on purpose.
 const SKILLS = [
   {
     id: 'soundwave',
     name: 'Звуковая волна',
     icon: '〰',
     keyLabel: '1',
-    cooldown: 5,
+    cooldown: 0.12,                  // ~8 waves/sec while held
     cast(p) {
       const maxR = Math.hypot(Game.w, Game.h) / 2 + 20;
       Game.effects.push(new SoundWave(p.x, p.y, p.damage * 0.5, maxR));
-      Game.shake = Math.min(Game.shake + 5, 14);
+      Game.shake = Math.min(Game.shake + 3, 10);
       return true;
     },
   },
@@ -176,7 +179,7 @@ const SKILLS = [
     name: 'Цепная молния',
     icon: '⚡',
     keyLabel: '2',
-    cooldown: 5,
+    cooldown: 0.18,                  // ~5 chains/sec while held
     cast(p) { return castChainLightning(p, p.damage * 1.5); },
   },
 ];
