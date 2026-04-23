@@ -68,6 +68,9 @@ const UI = {
     document.getElementById('trader-close').addEventListener('click', () => this.closeTrader());
     // HUD shop button = open shop without needing a nearby trader NPC.
     document.getElementById('shop-btn').addEventListener('click', () => this.openShop());
+    // Click the ARMY counter to recall all live companions to the player.
+    document.getElementById('army-count').parentElement
+      .addEventListener('click', () => UI.recallCompanions());
     if (new URLSearchParams(location.search).has('auto')) {
       // Prefer continue on auto mode too, so testing a change verifies resume.
       setTimeout(() => (snap ? contBtn : startBtn).click(), 80);
@@ -126,6 +129,31 @@ const UI = {
 
   // Shop opened from the HUD button (no physical trader required). Using a
   // sentinel non-null value so closeTrader / renderTraderCards still work.
+  // Teleport every live companion into a small ring around the player,
+  // clear their current target so they reform before re-engaging. Skipped
+  // when the game isn't active (e.g. while a menu overlay is open).
+  recallCompanions() {
+    if (!Game.running || !Game.player) return;
+    const p = Game.player;
+    let n = 0;
+    for (const c of Game.companions) if (c.alive) n++;
+    if (n === 0) return;
+    let i = 0;
+    for (const c of Game.companions) {
+      if (!c.alive) continue;
+      const a = (i / n) * TAU + Math.random() * 0.3;
+      const r = 40 + Math.random() * 50;
+      c.x = p.x + Math.cos(a) * r;
+      c.y = p.y + Math.sin(a) * r;
+      c.vx = 0; c.vy = 0;
+      c.target = null;
+      c.reroll = 0;             // force a fresh target pick next tick
+      // Slight teleport puff so the recall reads clearly.
+      Game.particles.push(new Particle(c.x, c.y, 0.3, 'xp'));
+      i++;
+    }
+  },
+
   openShop() {
     if (!Game.running || !Game.player) return;
     if (this.activeTrader) return;
