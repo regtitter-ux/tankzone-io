@@ -29,6 +29,10 @@ canvas#game { display: block; position: fixed; inset: 0; cursor: crosshair; }
 .ab.coin .k { color: #ffd670; }
 .ab .n { font-weight: 800; color: #fff; min-width: 14px; text-align: center; }
 .ab .t { color: #8b949e; font-size: 11px; }
+.ab.shop-btn { pointer-events: auto; cursor: pointer; background: linear-gradient(180deg, rgba(255,214,112,.18), rgba(255,214,112,.08)); border-color: rgba(255,214,112,.4); }
+.ab.shop-btn:hover { background: linear-gradient(180deg, rgba(255,214,112,.32), rgba(255,214,112,.14)); border-color: rgba(255,214,112,.7); }
+.ab.shop-btn .k { color: #ffd670; }
+.ab.shop-btn .t { color: #ffd670; }
 
 .trader-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 18px; }
 #trader-coins { color: #ffd670; font-weight: 700; }

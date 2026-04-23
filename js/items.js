@@ -4,6 +4,7 @@
 const ITEM_DEFS = {
   mine:   { color: '#f85149', stroke: '#9a1d16', label: 'M', radius: 8,  life: 30 },
   turret: { color: '#58a6ff', stroke: '#1a4c82', label: 'T', radius: 9,  life: 30 },
+  bot:    { color: '#7de2a0', stroke: '#1c7a42', label: 'G', radius: 9,  life: 30 },
   coin:   { color: '#ffd670', stroke: '#a07a1e', label: '$', radius: 7,  life: 22 },
 };
 
@@ -44,9 +45,10 @@ class Item {
   }
   collect() {
     const p = Game.player;
-    if (this.type === 'mine')        p.mines   = Math.min(99, p.mines   + 1);
-    else if (this.type === 'turret') p.turrets = Math.min(99, p.turrets + 1);
-    else if (this.type === 'coin')   p.coins   = p.coins + 1;
+    if (this.type === 'mine')        p.mines      += 1;
+    else if (this.type === 'turret') p.turrets    += 1;
+    else if (this.type === 'bot')    p.companions += 1;
+    else if (this.type === 'coin')   p.coins      += 1;
     Game.particles.push(new Particle(this.x, this.y, 0.3, 'xp'));
   }
   render(ctx) {
@@ -224,6 +226,102 @@ class TurretBot {
   }
 }
 
+// Friendly companion mini-tank. Follows the player at a small distance and
+// shoots any enemy within its sight range (tuned to roughly screen radius).
+// Persistent until destroyed — no life timer, cheap to spawn.
+class Companion {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.vx = 0; this.vy = 0;
+    this.r = 14;
+    this.angle = 0;
+    this.type = TANK_TYPE.LIGHT;
+    this.color = 'blue';
+    this.hp = 60;
+    this.maxHp = 60;
+    this.damage = 9;
+    this.fireRate = 2.5;
+    this.bulletSpeed = 480;
+    this.bulletRange = 560;
+    this.sight = 560;               // ~ screen radius at 1280×800 / 2
+    this.followDist = 80;           // ideal distance behind player
+    this.speed = 320;
+    this.shootCd = rand(0, 0.6);
+    this.alive = true;
+  }
+  takeDamage(dmg) {
+    this.hp -= dmg;
+    if (this.hp <= 0 && this.alive) {
+      this.alive = false;
+      for (let i = 0; i < 10; i++) Game.particles.push(new Particle(this.x, this.y, rand(0.3, 0.7), 'explode'));
+    }
+  }
+  update(dt) {
+    const p = Game.player;
+    if (!p) return;
+
+    // Find nearest enemy within sight; aim at it, otherwise face player dir.
+    let best = null, bestD = this.sight * this.sight;
+    for (const e of Game.enemies) {
+      if (!e.alive) continue;
+      const d2 = dist2(this.x, this.y, e.x, e.y);
+      if (d2 < bestD) { bestD = d2; best = e; }
+    }
+    if (best) {
+      const aim = angleTo(this.x, this.y, best.x, best.y);
+      const diff = angleDiff(this.angle, aim);
+      this.angle += clamp(diff, -6 * dt, 6 * dt);
+      this.shootCd -= dt;
+      if (Math.abs(diff) < 0.25 && this.shootCd <= 0) {
+        const a = this.angle;
+        const mx = this.x + Math.cos(a) * 18;
+        const my = this.y + Math.sin(a) * 18;
+        Game.bullets.push(new Bullet(mx, my, a, this.bulletSpeed, this.damage, this.bulletRange, 0, true, 'companion'));
+        Game.particles.push(new Particle(mx, my, 0.07, 'flash'));
+        this.shootCd = 1 / this.fireRate;
+      }
+    } else {
+      // Face the direction we're moving so the follow looks natural.
+      const moveAng = angleTo(0, 0, this.vx, this.vy);
+      if (Math.hypot(this.vx, this.vy) > 20) {
+        const diff = angleDiff(this.angle, moveAng);
+        this.angle += clamp(diff, -4 * dt, 4 * dt);
+      }
+    }
+
+    // Follow behaviour — steer to a trailing spot behind the player.
+    const followX = p.x - Math.cos(p.angle) * this.followDist;
+    const followY = p.y - Math.sin(p.angle) * this.followDist;
+    const toX = followX - this.x, toY = followY - this.y;
+    const d = Math.hypot(toX, toY);
+    const target = d > 2 ? this.speed * Math.min(1, d / 120) : 0;
+    if (d > 0) {
+      const ax = (toX / d) * target - this.vx;
+      const ay = (toY / d) * target - this.vy;
+      this.vx += ax * Math.min(1, dt * 6);
+      this.vy += ay * Math.min(1, dt * 6);
+    }
+    // Don't overlap the player, don't walk into water/obstacles.
+    const nx = this.x + this.vx * dt, ny = this.y + this.vy * dt;
+    if (!World.blocked(nx, this.y, this.r)) this.x = nx; else this.vx *= -0.3;
+    if (!World.blocked(this.x, ny, this.r)) this.y = ny; else this.vy *= -0.3;
+  }
+  render(ctx) {
+    drawTank(ctx, this.x, this.y, this.angle, this.type, this.color, 0.28);
+    // Subtle "ally" ring under the sprite so it reads as friendly.
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = '#8fd9ff'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(this.x, this.y, this.r + 3, 0, TAU); ctx.stroke();
+    ctx.restore();
+    if (this.hp < this.maxHp) {
+      const w = 26, h = 3;
+      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(this.x - w / 2, this.y - this.r - 10, w, h);
+      ctx.fillStyle = '#8fd9ff'; ctx.fillRect(this.x - w / 2, this.y - this.r - 10, w * (this.hp / this.maxHp), h);
+    }
+  }
+}
+
 // Peaceful "civilian" vehicles that wander. Drop XP and sometimes coins when
 // destroyed, but never shoot back. Used by 'herd' POIs.
 class NeutralTank {
@@ -250,15 +348,34 @@ class NeutralTank {
     this.flash = 0.15;
     if (this.hp <= 0 && this.alive) {
       this.alive = false;
-      for (let i = 0; i < 6; i++) {
-        const a = Math.random() * TAU, d = rand(4, 18);
-        Game.orbs.push(new XPOrb(this.x + Math.cos(a) * d, this.y + Math.sin(a) * d, Math.ceil(this.xpReward / 6)));
-      }
-      if (Math.random() < 0.4) Game.items.push(new Item(this.x, this.y, 'coin'));
-      for (let i = 0; i < 14; i++) Game.particles.push(new Particle(this.x, this.y, rand(0.4, 0.8), 'explode'));
-      if (source === 'player') {
+      if (source === 'turret' || source === 'companion') {
+        // Consistent with Enemy: auto-credit XP/coins to the player.
+        Game.player.gainXp(this.xpReward);
+        Game.player.coins += 1;
         Game.player.score += this.scoreReward;
         Game.player.kills++;
+        Game.particles.push(new Particle(this.x, this.y, 0.35, 'xp'));
+      } else {
+        for (let i = 0; i < 6; i++) {
+          const a = Math.random() * TAU, d = rand(4, 18);
+          Game.orbs.push(new XPOrb(this.x + Math.cos(a) * d, this.y + Math.sin(a) * d, Math.ceil(this.xpReward / 6)));
+        }
+        if (Math.random() < 0.4) Game.items.push(new Item(this.x, this.y, 'coin'));
+        if (source === 'player') {
+          Game.player.score += this.scoreReward;
+          Game.player.kills++;
+        }
+      }
+      for (let i = 0; i < 14; i++) Game.particles.push(new Particle(this.x, this.y, rand(0.4, 0.8), 'explode'));
+
+      // If this was the last member of its herd, mark the POI cleared so it
+      // won't respawn on re-entry.
+      if (this.chunkKey) {
+        const poi = World.poisByChunk.get(this.chunkKey);
+        if (poi && poi.type === 'herd' && !poi.cleared) {
+          const siblings = Game.neutrals.some(n => n !== this && n.alive && n.chunkKey === this.chunkKey);
+          if (!siblings) { poi.cleared = true; Save.markCleared(this.chunkKey); }
+        }
       }
     }
   }
@@ -305,9 +422,9 @@ class Trader {
     const target = angleTo(this.x, this.y, p.x, p.y);
     const diff = angleDiff(this.angle, target);
     this.angle += clamp(diff, -1.5 * dt, 1.5 * dt);
-    // Open shop when player steps close and presses F. UI.activeTrader is the
-    // single source of truth, so we can't accidentally double-open.
-    const close = dist2(this.x, this.y, p.x, p.y) < 90 * 90;
+    // Open shop when player is within 140px and presses F. UI.activeTrader
+    // guards against accidental double-open.
+    const close = dist2(this.x, this.y, p.x, p.y) < 140 * 140;
     if (close && Game.input.interact && !UI.activeTrader) {
       Game.input.interact = false;
       UI.openTrader(this);

@@ -111,8 +111,9 @@ class Player {
     // Consumables & economy.
     this.mines = 2;
     this.turrets = 1;
+    this.companions = 1;
     this.coins = 0;
-    this.abilityCd = { mine: 0, turret: 0 };
+    this.abilityCd = { mine: 0, turret: 0, companion: 0 };
   }
 
   xpForLevel(n) { return Math.floor(10 * Math.pow(1.35, n - 1)); }
@@ -124,8 +125,9 @@ class Player {
       this.level++;
       this.xpNext = this.xpForLevel(this.level);
       // Free consumables every level — keeps the ability loop flowing.
-      this.mines   += 100;
-      this.turrets += 100;
+      this.mines      += 100;
+      this.turrets    += 100;
+      this.companions += 100;
       UI.queueLevelUp(this.level);
     }
   }
@@ -216,8 +218,9 @@ class Player {
 
     // Ability cooldowns + deploy on key press. Edge triggers are always
     // consumed so stale flags can't fire on a later inventory refill.
-    this.abilityCd.mine   = Math.max(0, this.abilityCd.mine   - dt);
-    this.abilityCd.turret = Math.max(0, this.abilityCd.turret - dt);
+    this.abilityCd.mine      = Math.max(0, this.abilityCd.mine      - dt);
+    this.abilityCd.turret    = Math.max(0, this.abilityCd.turret    - dt);
+    this.abilityCd.companion = Math.max(0, this.abilityCd.companion - dt);
     if (input.abilityMine) {
       input.abilityMine = false;
       if (this.mines > 0 && this.abilityCd.mine === 0) {
@@ -236,6 +239,17 @@ class Player {
           Game.turrets.push(new TurretBot(drop.x, drop.y));
           this.abilityCd.turret = 0.5;
         }
+      }
+    }
+    if (input.abilityCompanion) {
+      input.abilityCompanion = false;
+      if (this.companions > 0 && this.abilityCd.companion === 0) {
+        const drop = tankLocalToWorld(this.x, this.y, this.angle, -60, 0);
+        // Companions can spawn anywhere — even in a blocked spot they'll
+        // steer away on the first tick.
+        this.companions--;
+        Game.companions.push(new Companion(drop.x, drop.y));
+        this.abilityCd.companion = 0.3;
       }
     }
   }
@@ -322,13 +336,16 @@ class Enemy {
     if (this.hp <= 0 && this.alive) {
       this.alive = false;
       const coins = 1 + Math.floor(this.tier / 2) + (Math.random() < 0.35 ? 1 : 0);
-      if (source === 'turret') {
-        // Turret kills auto-credit the player — no orbs/coins to chase.
+      const autoCredit = source === 'turret' || source === 'companion';
+      // 35% chance for a bot drop from any enemy kill. Auto-credited on
+      // turret/companion kills so you never chase them across the field.
+      const botRoll = Math.random() < 0.35;
+      if (autoCredit) {
         Game.player.gainXp(this.xpReward);
         Game.player.coins += coins;
         Game.player.score += this.scoreReward;
         Game.player.kills++;
-        // Floating indicator so the player sees the reward.
+        if (botRoll) Game.player.companions += 1;
         Game.particles.push(new Particle(this.x, this.y, 0.35, 'xp'));
       } else {
         // Normal kill path: drop orbs + coin items so they magnet to player.
@@ -341,6 +358,10 @@ class Enemy {
           const a = Math.random() * TAU, d = rand(8, 22);
           Game.items.push(new Item(this.x + Math.cos(a) * d, this.y + Math.sin(a) * d, 'coin'));
         }
+        if (botRoll) {
+          const a = Math.random() * TAU, d = rand(12, 24);
+          Game.items.push(new Item(this.x + Math.cos(a) * d, this.y + Math.sin(a) * d, 'bot'));
+        }
         if (source === 'player') {
           Game.player.score += this.scoreReward;
           Game.player.kills++;
@@ -352,15 +373,23 @@ class Enemy {
 
   update(dt) {
     if (!this.alive) return;
-    const px = Game.player.x, py = Game.player.y;
-    const d = dist(this.x, this.y, px, py);
+    // Pick the closest threat: player or any deployed turret. Turrets act as
+    // distraction — if one's nearer than the player, they draw fire.
+    let tx = Game.player.x, ty = Game.player.y, targetAlive = Game.player.alive;
+    let td = dist(this.x, this.y, tx, ty);
+    for (const tur of Game.turrets) {
+      if (!tur.alive) continue;
+      const d2 = dist(this.x, this.y, tur.x, tur.y);
+      if (d2 < td) { td = d2; tx = tur.x; ty = tur.y; targetAlive = true; }
+    }
+    const d = td;
 
     if (this.flash > 0) this.flash -= dt;
 
     // Pick drive direction (relative to world) and aim angle.
     let driveX = 0, driveY = 0, aimAngle = this.angle, throttle = 1;
-    if (d < this.sightRange && Game.player.alive) {
-      aimAngle = angleTo(this.x, this.y, px, py);
+    if (d < this.sightRange && targetAlive) {
+      aimAngle = angleTo(this.x, this.y, tx, ty);
       const wantDist = this.shootRange * 0.72;
       const dir = d > wantDist ? 1 : d < wantDist * 0.55 ? -1 : 0;
       if (dir !== 0) { driveX = Math.cos(aimAngle) * dir; driveY = Math.sin(aimAngle) * dir; }
@@ -494,11 +523,20 @@ class Bullet {
         Game.particles.push(new Particle(this.x, this.y, 0.15, 'spark'));
         return;
       }
-      // Enemy bullets also damage friendly turrets.
+      // Enemy bullets also damage friendly turrets and companions.
       for (const t of Game.turrets) {
         if (!t.alive) continue;
         if (circleHit(this.x, this.y, this.r, t.x, t.y, t.r)) {
           t.takeDamage(this.damage);
+          this.alive = false;
+          Game.particles.push(new Particle(this.x, this.y, 0.15, 'spark'));
+          return;
+        }
+      }
+      for (const c of Game.companions) {
+        if (!c.alive) continue;
+        if (circleHit(this.x, this.y, this.r, c.x, c.y, c.r)) {
+          c.takeDamage(this.damage);
           this.alive = false;
           Game.particles.push(new Particle(this.x, this.y, 0.15, 'spark'));
           return;

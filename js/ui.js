@@ -9,6 +9,7 @@ const UPGRADES = [
   { id: 'bspeed', name: '+Скор. снаряда',  icon: 'BS', desc: '+15% скорости пуль',                  apply: p => { p.bulletSpeed *= 1.15; p.bulletRange *= 1.08; } },
   { id: 'mines',  name: '+Мины',           icon: 'M',  desc: '+3 мины в инвентарь',                  apply: p => { p.mines += 3; } },
   { id: 'turrets',name: '+Турель',         icon: 'T',  desc: '+1 турель в инвентарь',                apply: p => { p.turrets += 1; } },
+  { id: 'bots',   name: '+Бот',            icon: 'G',  desc: '+1 бот-компаньон',                      apply: p => { p.companions += 1; } },
   { id: 'pierce', name: '+Пробитие',       icon: 'PI', desc: 'Пули проходят +1 цель',  rare: true,   apply: p => { p.pierce += 1; } },
   { id: 'multi',  name: '+Мультивыстрел',  icon: 'MS', desc: '+1 пуля за выстрел',     epic: true,   apply: p => { p.multishot += 1; } },
 ];
@@ -19,6 +20,8 @@ const TRADER_OFFERS = [
   { id: 'mines15',  name: '15 мин',        icon: 'M+', desc: 'Ящик мин',                  cost: 8, rare: true,  apply: p => { p.mines += 15; } },
   { id: 'turrets3', name: '3 турели',      icon: 'T',  desc: 'Комплект турелей',          cost: 4, apply: p => { p.turrets += 3; } },
   { id: 'turrets8', name: '8 турелей',     icon: 'T+', desc: 'Ящик турелей',              cost: 10, rare: true, apply: p => { p.turrets += 8; } },
+  { id: 'bots3',    name: '3 бота',        icon: 'G',  desc: 'Звено компаньонов',         cost: 5, apply: p => { p.companions += 3; } },
+  { id: 'bots8',    name: '8 ботов',       icon: 'G+', desc: 'Ударный отряд ботов',       cost: 12, rare: true, apply: p => { p.companions += 8; } },
   { id: 'armor',    name: 'Броня+',        icon: 'HP', desc: '+40% макс. HP и полное HP', cost: 5, apply: p => { p.maxHp = Math.round(p.maxHp * 1.4); p.hp = p.maxHp; } },
   { id: 'caliber',  name: 'Калибр+',       icon: 'DM', desc: '+35% урона',                cost: 6, apply: p => { p.damage *= 1.35; } },
   { id: 'pierce',   name: 'Бронебой',      icon: 'PI', desc: '+2 пробитие',               cost: 7, rare: true,  apply: p => { p.pierce += 2; } },
@@ -63,6 +66,8 @@ const UI = {
       Game.start({ fresh: true });
     });
     document.getElementById('trader-close').addEventListener('click', () => this.closeTrader());
+    // HUD shop button = open shop without needing a nearby trader NPC.
+    document.getElementById('shop-btn').addEventListener('click', () => this.openShop());
     if (new URLSearchParams(location.search).has('auto')) {
       // Prefer continue on auto mode too, so testing a change verifies resume.
       setTimeout(() => (snap ? contBtn : startBtn).click(), 80);
@@ -117,6 +122,14 @@ const UI = {
     Game.paused = true;
     this.renderTraderCards();
     document.getElementById('trader').classList.remove('hidden');
+  },
+
+  // Shop opened from the HUD button (no physical trader required). Using a
+  // sentinel non-null value so closeTrader / renderTraderCards still work.
+  openShop() {
+    if (!Game.running || !Game.player) return;
+    if (this.activeTrader) return;
+    this.openTrader({ x: 0, y: 0, __hud: true });
   },
 
   renderTraderCards() {
@@ -180,6 +193,7 @@ const UI = {
     document.getElementById('hp-fill').style.width = (p.hp / p.maxHp * 100) + '%';
     document.getElementById('ab-mine').textContent = p.mines;
     document.getElementById('ab-turret').textContent = p.turrets;
+    document.getElementById('ab-companion').textContent = p.companions;
     document.getElementById('ab-coin').textContent = p.coins;
   },
 

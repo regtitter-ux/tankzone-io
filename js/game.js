@@ -12,6 +12,7 @@ const Game = {
   items: [],
   mines: [],
   turrets: [],
+  companions: [],
   neutrals: [],
   traders: [],
   particles: [],
@@ -29,6 +30,7 @@ const Game = {
     shooting: false,
     abilityMine: false,
     abilityTurret: false,
+    abilityCompanion: false,
     interact: false,
   },
 
@@ -69,7 +71,9 @@ const Game = {
       if (code === 'Space') return 'shoot';
       if (code === 'KeyQ') return 'mine';
       if (code === 'KeyE') return 'turret';
+      if (code === 'KeyG') return 'companion';
       if (code === 'KeyF') return 'interact';
+      if (code === 'KeyB') return 'shop';
       return null;
     };
     window.addEventListener('keydown', e => {
@@ -77,9 +81,11 @@ const Game = {
       if (!a) return;
       // Edge-trigger flags fire once per keydown; keys Set tracks held state.
       if (!this.input.keys.has(a)) {
-        if (a === 'mine')     this.input.abilityMine = true;
-        if (a === 'turret')   this.input.abilityTurret = true;
-        if (a === 'interact') this.input.interact = true;
+        if (a === 'mine')      this.input.abilityMine = true;
+        if (a === 'turret')    this.input.abilityTurret = true;
+        if (a === 'companion') this.input.abilityCompanion = true;
+        if (a === 'interact')  this.input.interact = true;
+        if (a === 'shop')      UI.openShop();
       }
       this.input.keys.add(a);
       if (a === 'shoot') this.input.shooting = true;
@@ -118,6 +124,7 @@ const Game = {
     this.items = [];
     this.mines = [];
     this.turrets = [];
+    this.companions = [];
     this.neutrals = [];
     this.traders = [];
     this.particles = [];
@@ -167,29 +174,47 @@ const Game = {
         World.buildChunk(cx + dx, cy + dy);
     this.spawnPOIs();
     World.evict(p.x, p.y, 5);
+    this.cleanupEvictedPOIs();
   },
 
-  // Spawn POI entities (neutrals, traders) on first visit to their chunk.
+  // Ensure an entity exists for every live POI within loaded chunks. This is
+  // idempotent: traders are stationary and always present; herds respawn when
+  // re-entering their chunk UNLESS the player already wiped them (poi.cleared
+  // gets persisted in the save). No more "$ marker but no NPC" gaps.
   spawnPOIs() {
-    const p = this.player;
     for (const [key, poi] of World.poisByChunk) {
-      if (poi.spawned) continue;
-      // Only spawn when the chunk is within activation range.
-      if (dist2(poi.x, poi.y, p.x, p.y) > 1400 * 1400) continue;
-      poi.spawned = true;
-      if (poi.type === 'herd') {
-        const n = 4 + (Math.random() * 3 | 0);
-        for (let i = 0; i < n; i++) {
-          const a = (i / n) * TAU, r = 40 + Math.random() * 70;
-          const x = poi.x + Math.cos(a) * r;
-          const y = poi.y + Math.sin(a) * r;
-          if (!World.blocked(x, y, 22)) this.neutrals.push(new NeutralTank(x, y));
+      if (poi.type === 'trader') {
+        const live = this.traders.some(t => t.chunkKey === key);
+        if (!live) {
+          const t = new Trader(poi.x, poi.y);
+          t.chunkKey = key;
+          this.traders.push(t);
         }
-      } else if (poi.type === 'trader') {
-        this.traders.push(new Trader(poi.x, poi.y));
+      } else if (poi.type === 'herd' && !poi.cleared) {
+        const live = this.neutrals.some(n => n.chunkKey === key);
+        if (!live) {
+          // Deterministic count so respawns don't farm XP arbitrarily.
+          const n = 4 + Math.floor(hash2D(poi.cx, poi.cy, World.seed + 3131) * 3);
+          for (let i = 0; i < n; i++) {
+            const a = (i / n) * TAU, r = 46 + hash2D(poi.cx, poi.cy + i, World.seed + 42) * 70;
+            const x = poi.x + Math.cos(a) * r;
+            const y = poi.y + Math.sin(a) * r;
+            if (!World.blocked(x, y, 22)) {
+              const nt = new NeutralTank(x, y);
+              nt.chunkKey = key;
+              this.neutrals.push(nt);
+            }
+          }
+        }
       }
-      // 'base' POIs are chest+crates placed as obstacles at chunk build time.
     }
+  },
+
+  // Remove POI-bound entities when their chunk is evicted, so we don't keep a
+  // distant trader alive forever. They'll re-spawn when the player returns.
+  cleanupEvictedPOIs() {
+    this.traders  = this.traders.filter(t => !t.chunkKey || World.chunks.has(t.chunkKey));
+    this.neutrals = this.neutrals.filter(n => !n.chunkKey || World.chunks.has(n.chunkKey));
   },
 
   // Keys for chunks overlapping the viewport + a small margin.
@@ -241,15 +266,19 @@ const Game = {
     const maxD2 = 2500 * 2500;
     const px = this.player.x, py = this.player.y;
     this.enemies  = this.enemies.filter(e => e.alive && dist2(e.x, e.y, px, py) < maxD2);
-    this.neutrals = this.neutrals.filter(e => e.alive && dist2(e.x, e.y, px, py) < maxD2);
-    this.traders  = this.traders.filter(t => dist2(t.x, t.y, px, py) < maxD2);
+    // Traders + neutrals are cleaned up by chunk eviction (cleanupEvictedPOIs),
+    // never by distance alone — so a trader doesn't vanish because the player
+    // wandered slightly out of range.
+    this.neutrals = this.neutrals.filter(e => e.alive);
     this.bullets  = this.bullets.filter(b => b.alive);
     this.orbs     = this.orbs.filter(o => o.alive);
     this.items    = this.items.filter(i => i.alive);
     this.mines    = this.mines.filter(m => m.alive);
     this.turrets  = this.turrets.filter(t => t.alive);
+    this.companions = this.companions.filter(c => c.alive);
     this.particles = this.particles.filter(p => p.alive);
     this.tracks = this.tracks.filter(t => t.life > 0);
+
   },
 
   update(dt) {
@@ -266,6 +295,7 @@ const Game = {
     for (const it of this.items) it.update(dt);
     for (const m of this.mines) m.update(dt);
     for (const tur of this.turrets) tur.update(dt);
+    for (const c of this.companions) c.update(dt);
     // Tick obstacle flash timers.
     const activeChunks = this.activeChunkKeys();
     for (const key of activeChunks) {
@@ -368,6 +398,7 @@ const Game = {
     for (const n of this.neutrals) entities.push(n);
     for (const t of this.traders)  entities.push(t);
     for (const t of this.turrets)  entities.push(t);
+    for (const c of this.companions) entities.push(c);
     const all = drawables.concat(entities);
     all.sort((a, b) => a.y - b.y);
     for (const o of all) o.render(ctx);

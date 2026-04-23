@@ -3,8 +3,10 @@
 // schema changes ship in a future release. Saves are small JSON (~a few KB);
 // IndexedDB would be overkill for this footprint.
 
-const SAVE_KEY = 'tankzone.save.v2';
-const SAVE_VERSION = 2;
+// Bumped whenever the snapshot shape changes in a way we can't migrate.
+// v4: adds placed companions.
+const SAVE_KEY = 'tankzone.save.v4';
+const SAVE_VERSION = 4;
 const AUTOSAVE_EVERY = 4; // seconds
 
 // Which player fields to persist. Derived per-frame state (velocity, flash,
@@ -15,7 +17,7 @@ const PLAYER_FIELDS = [
   'damage', 'fireRate', 'bulletSpeed', 'bulletRange', 'pierce', 'multishot', 'spread', 'recoil',
   'level', 'xp', 'xpNext',
   'score', 'kills',
-  'mines', 'turrets', 'coins',
+  'mines', 'turrets', 'companions', 'coins',
   'type', 'color',
 ];
 
@@ -42,17 +44,24 @@ const Save = {
     const persisted = this._destroyed || {};
     const merged = { ...persisted, ...destroyed };
 
-    // POIs — remember which ones have spawned (so we don't re-spawn herds).
+    // Placed structures (player-deployed). These are authoritative: whatever
+    // is on the field gets written verbatim.
+    const mines = Game.mines.filter(m => m.alive).map(m => ({
+      x: m.x, y: m.y, armTime: m.armTime, life: m.life,
+    }));
+    const turrets = Game.turrets.filter(t => t.alive).map(t => ({
+      x: t.x, y: t.y, angle: t.angle, hp: t.hp,
+    }));
+    const companions = Game.companions.filter(c => c.alive).map(c => ({
+      x: c.x, y: c.y, angle: c.angle, hp: c.hp,
+    }));
+
+    // POI "cleared" flags so we don't auto-respawn a herd the player wiped.
     const pois = {};
     for (const [key, poi] of World.poisByChunk) {
-      pois[key] = { type: poi.type, spawned: !!poi.spawned };
+      pois[key] = { type: poi.type, cleared: !!poi.cleared };
     }
-    const poisPersisted = this._pois || {};
-    const poisMerged = { ...poisPersisted, ...pois };
-
-    // Killed neutrals/traders: we don't track these in saves; they're cheap to
-    // re-spawn and the player can always revisit. Score+kills already reflect
-    // past runs.
+    const poisMerged = { ...(this._pois || {}), ...pois };
 
     return {
       v: SAVE_VERSION,
@@ -61,6 +70,9 @@ const Save = {
       player,
       destroyed: merged,
       pois: poisMerged,
+      mines,
+      turrets,
+      companions,
     };
   },
 
@@ -103,7 +115,7 @@ const Save = {
   apply(snap) {
     if (!snap) return false;
     World.seed = snap.seed | 0;
-    // Seed memory caches for chunks that might get rebuilt later.
+    // Seed memory caches for chunks that get rebuilt later.
     this._destroyed = snap.destroyed || {};
     this._pois = snap.pois || {};
 
@@ -111,8 +123,33 @@ const Save = {
     const p = new Player(snap.player.x || 0, snap.player.y || 0);
     for (const f of PLAYER_FIELDS) if (snap.player[f] !== undefined) p[f] = snap.player[f];
     Game.player = p;
-    // Clear transient state so a reloaded game doesn't resume mid-flash.
     p.vx = 0; p.vy = 0; p.flash = 0; p.shootCd = 0; p.boostHeat = 0;
+
+    // Restore placed structures.
+    if (Array.isArray(snap.mines)) {
+      for (const d of snap.mines) {
+        const m = new Mine(d.x, d.y);
+        if (typeof d.armTime === 'number') m.armTime = d.armTime;
+        if (typeof d.life === 'number') m.life = d.life;
+        Game.mines.push(m);
+      }
+    }
+    if (Array.isArray(snap.turrets)) {
+      for (const d of snap.turrets) {
+        const t = new TurretBot(d.x, d.y);
+        if (typeof d.angle === 'number') t.angle = d.angle;
+        if (typeof d.hp === 'number') t.hp = d.hp;
+        Game.turrets.push(t);
+      }
+    }
+    if (Array.isArray(snap.companions)) {
+      for (const d of snap.companions) {
+        const c = new Companion(d.x, d.y);
+        if (typeof d.angle === 'number') c.angle = d.angle;
+        if (typeof d.hp === 'number') c.hp = d.hp;
+        Game.companions.push(c);
+      }
+    }
     return true;
   },
 
@@ -129,12 +166,19 @@ const Save = {
     }
   },
 
-  // Same idea for POI spawned flags: if a herd/trader has already been
-  // generated in a prior session, keep it generated.
+  // Restore POI cleared-state (so a herd wiped out in a previous session
+  // doesn't auto-respawn on return).
   replayPOI(key, poi) {
     if (!this._pois || !poi) return;
     const rec = this._pois[key];
-    if (rec && rec.spawned) poi.spawned = true;
+    if (rec && rec.cleared) poi.cleared = true;
+  },
+
+  // Mark a POI as cleared so its entities won't respawn on future chunk loads.
+  markCleared(chunkKey) {
+    if (!this._pois) this._pois = {};
+    const rec = this._pois[chunkKey] || (this._pois[chunkKey] = {});
+    rec.cleared = true;
   },
 
   // Immediate record of a destruction event. Called from Obstacle.destroy() so
