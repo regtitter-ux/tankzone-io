@@ -224,23 +224,39 @@ class Player {
     this.abilityCd.mine      = Math.max(0, this.abilityCd.mine      - dt);
     this.abilityCd.turret    = Math.max(0, this.abilityCd.turret    - dt);
     this.abilityCd.companion = Math.max(0, this.abilityCd.companion - dt);
-    if (input.abilityMine) {
+    // Hold-Q spams mines behind the tank at ~12/sec. Each drop gets a
+    // randomised arc offset so a burst scatters into a minefield instead
+    // of stacking on one tile.
+    const wantMine = input.abilityMine || input.keys.has('mine');
+    if (wantMine) {
       input.abilityMine = false;
       if (this.mines > 0 && this.abilityCd.mine === 0) {
         this.mines--;
-        const drop = tankLocalToWorld(this.x, this.y, this.angle, -36, 0);
-        Game.mines.push(new Mine(drop.x, drop.y));
-        this.abilityCd.mine = 0.4;
+        const spawnAngle = this.angle + Math.PI + rand(-0.8, 0.8);
+        const spawnR    = rand(32, 60);
+        const dropX = this.x + Math.cos(spawnAngle) * spawnR;
+        const dropY = this.y + Math.sin(spawnAngle) * spawnR;
+        Game.mines.push(new Mine(dropX, dropY));
+        this.abilityCd.mine = 0.08;
       }
     }
-    if (input.abilityTurret) {
+    // Hold-E spams turrets at ~10/sec. Blocked spots don't consume inventory
+    // but keep a short retry cooldown so mashing against a wall doesn't lock
+    // placement while the player re-aims.
+    const wantTurret = input.abilityTurret || input.keys.has('turret');
+    if (wantTurret) {
       input.abilityTurret = false;
       if (this.turrets > 0 && this.abilityCd.turret === 0) {
-        const drop = tankLocalToWorld(this.x, this.y, this.angle, -48, 0);
-        if (!World.blocked(drop.x, drop.y, 20)) {
+        const spawnAngle = this.angle + Math.PI + rand(-0.9, 0.9);
+        const spawnR    = rand(52, 80);
+        const dropX = this.x + Math.cos(spawnAngle) * spawnR;
+        const dropY = this.y + Math.sin(spawnAngle) * spawnR;
+        if (!World.blocked(dropX, dropY, 20)) {
           this.turrets--;
-          Game.turrets.push(new TurretBot(drop.x, drop.y));
-          this.abilityCd.turret = 0.5;
+          Game.turrets.push(new TurretBot(dropX, dropY));
+          this.abilityCd.turret = 0.10;
+        } else {
+          this.abilityCd.turret = 0.04;
         }
       }
     }
