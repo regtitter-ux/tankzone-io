@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>TankZone.io — бесконечные танки</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud" class="hud hidden">
+  <div class="hud-top">
+    <div class="stat"><span class="label">LVL</span><span id="lvl-val">1</span></div>
+    <div class="xpbar"><div id="xp-fill"></div><span id="xp-text">0 / 10</span></div>
+    <div class="stat small"><span class="label">SCORE</span><span id="score-val">0</span></div>
+    <div class="stat small"><span class="label">KILLS</span><span id="kills-val">0</span></div>
+    <div class="stat small"><span class="label">X</span><span id="pos-x">0</span></div>
+    <div class="stat small"><span class="label">Y</span><span id="pos-y">0</span></div>
+  </div>
+
+  <div class="hud-bottom">
+    <div class="hp-wrap">
+      <div class="hp-bar"><div id="hp-fill"></div><span id="hp-text">100 / 100</span></div>
+      <div class="abilities">
+        <div class="ab"><span class="k">Q</span><span class="n" id="ab-mine">0</span><span class="t">мина</span></div>
+        <div class="ab"><span class="k">E</span><span class="n" id="ab-turret">0</span><span class="t">турель</span></div>
+        <div class="ab coin"><span class="k">$</span><span class="n" id="ab-coin">0</span><span class="t">монеты</span></div>
+      </div>
+    </div>
+    <div id="minimap-wrap"><canvas id="minimap" width="160" height="160"></canvas></div>
+  </div>
+</div>
+
+<div id="trader" class="overlay hidden">
+  <div class="panel">
+    <h2>Торговец</h2>
+    <p class="tag">Обменяй монеты на редкие улучшения</p>
+    <div id="trader-cards" class="cards"></div>
+    <div class="trader-foot">
+      <span id="trader-coins">Монет: 0</span>
+      <button id="trader-close">Уйти</button>
+    </div>
+  </div>
+</div>
+
+<div id="menu" class="overlay">
+  <div class="panel">
+    <h1>TankZone<span class="dim">.io</span></h1>
+    <p class="tag">Бесконечный мир. Бесконечная прокачка.</p>
+    <div class="controls">
+      <div><b>WASD</b> — движение</div>
+      <div><b>Мышь</b> — прицел</div>
+      <div><b>ЛКМ / Пробел</b> — огонь</div>
+      <div><b>Shift</b> — форсаж</div>
+      <div><b>Q</b> — мина</div>
+      <div><b>E</b> — турель</div>
+      <div><b>F</b> — торговец</div>
+    </div>
+    <button id="start-btn">Вперёд</button>
+  </div>
+</div>
+
+<div id="levelup" class="overlay hidden">
+  <div class="panel">
+    <h2>Уровень <span id="levelup-num">2</span></h2>
+    <p class="tag">Выбери улучшение</p>
+    <div id="cards" class="cards"></div>
+  </div>
+</div>
+
+<div id="gameover" class="overlay hidden">
+  <div class="panel">
+    <h2>Уничтожен</h2>
+    <div class="summary">
+      <div><span class="label">Уровень</span><span id="go-lvl">1</span></div>
+      <div><span class="label">Счёт</span><span id="go-score">0</span></div>
+      <div><span class="label">Убийств</span><span id="go-kills">0</span></div>
+      <div><span class="label">Дистанция</span><span id="go-dist">0</span></div>
+    </div>
+    <button id="retry-btn">Ещё раз</button>
+  </div>
+</div>
+
+<script src="js/utils.js"></script>
+<script src="js/entities.js"></script>
+<script src="js/items.js"></script>
+<script src="js/obstacles.js"></script>
+<script src="js/world.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
