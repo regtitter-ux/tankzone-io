@@ -116,7 +116,7 @@ class Mine {
     for (const o of obs) {
       if (o.dead) continue;
       const d2 = dist2(this.x, this.y, o.x, o.y);
-      if (d2 < r2) o.hit(this.damage);
+      if (d2 < r2) o.hit(this.damage, 'player');
     }
     // Damage player if standing on it.
     const p = Game.player;
@@ -262,10 +262,17 @@ class Companion {
     this.fightR      = rand(140, 230);
     this.fightDrift  = (Math.random() < 0.5 ? -1 : 1) * rand(0.8, 1.8);
 
-    // Target-reroll timer so the bot occasionally picks a new enemy and a
-    // new orbit angle — keeps motion unpredictable.
+    // Target-reroll timer so the bot occasionally picks a new enemy/obstacle
+    // and a new orbit angle — keeps motion unpredictable.
     this.reroll = rand(0.5, 1.8);
-    this.targetId = -1;
+    this.target = null;
+  }
+
+  // Returns true if the reference is still a valid target (not dead/destroyed).
+  static targetAlive(t) {
+    if (!t) return false;
+    if (t instanceof Obstacle) return !t.dead;
+    return !!t.alive;
   }
   takeDamage(dmg) {
     this.hp -= dmg;
@@ -282,37 +289,48 @@ class Companion {
     this.fightAngle  += this.fightDrift  * dt;
     this.reroll      -= dt;
 
-    // Pick a target enemy: either our current one if still alive/nearby, or
-    // a new one when the reroll timer ticks down. Rerolls keep the squad
-    // spread across several enemies rather than dogpiling one.
-    let target = null;
-    if (this.targetId >= 0) {
-      const current = Game.enemies[this.targetId];
-      if (current && current.alive && dist2(this.x, this.y, current.x, current.y) < this.sight * this.sight) {
-        target = current;
-      }
-    }
-    if (!target || this.reroll <= 0) {
-      // Sample a few random enemies instead of always picking nearest —
-      // prevents every bot ganging up on the same target.
-      let best = null, bestScore = Infinity;
-      const inSight = [];
-      for (let i = 0; i < Game.enemies.length; i++) {
-        const e = Game.enemies[i];
+    // Target selection: prefer enemies in sight; fall back to nearby
+    // obstacles (trees, crates, etc.) so idle squads chop the forest for XP
+    // and loot instead of just circling. Loot-bearing props come first.
+    let target = this.target;
+    const sight2 = this.sight * this.sight;
+    const stillValid = Companion.targetAlive(target) &&
+      dist2(this.x, this.y, target.x, target.y) < sight2;
+    if (!stillValid || this.reroll <= 0) {
+      // Enemies — weighted random pick among the few closest so the squad
+      // spreads across multiple threats instead of dogpiling.
+      const enemies = [];
+      for (const e of Game.enemies) {
         if (!e.alive) continue;
         const d2 = dist2(this.x, this.y, e.x, e.y);
-        if (d2 < this.sight * this.sight) inSight.push({ e, i, d2 });
+        if (d2 < sight2) enemies.push({ o: e, d2 });
       }
-      if (inSight.length) {
-        // Weighted pick: closer is more likely, but not deterministic.
-        const pickIdx = Math.floor(Math.random() * Math.min(inSight.length, 4));
-        inSight.sort((a, b) => a.d2 - b.d2);
-        const chosen = inSight[pickIdx] || inSight[0];
-        target = chosen.e; this.targetId = chosen.i;
-        this.fightAngle = Math.random() * TAU;
+      if (enemies.length) {
+        enemies.sort((a, b) => a.d2 - b.d2);
+        const pickIdx = Math.floor(Math.random() * Math.min(enemies.length, 4));
+        target = enemies[pickIdx].o;
       } else {
-        this.targetId = -1;
+        // No enemies — scan destructible obstacles in sight. Prioritise the
+        // ones with a loot table (crates, barrels, chest) since they pay out.
+        target = null;
+        const nearby = World.getObstaclesNear(this.x, this.y, this.sight);
+        const loot = [], nature = [];
+        for (const o of nearby) {
+          if (o.dead) continue;
+          const d2 = dist2(this.x, this.y, o.x, o.y);
+          if (d2 >= sight2) continue;
+          const def = OBSTACLE_DEFS[o.type];
+          (def && def.loot ? loot : nature).push({ o, d2 });
+        }
+        const pool = loot.length ? loot : nature;
+        if (pool.length) {
+          pool.sort((a, b) => a.d2 - b.d2);
+          const pickIdx = Math.floor(Math.random() * Math.min(pool.length, 4));
+          target = pool[pickIdx].o;
+        }
       }
+      this.target = target;
+      this.fightAngle = Math.random() * TAU;
       this.reroll = rand(1.2, 2.8);
     }
 

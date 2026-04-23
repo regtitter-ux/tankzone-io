@@ -87,32 +87,38 @@ class Obstacle {
     this.yJit = (hash2D(Math.floor(x), Math.floor(y), World.seed + 5) - 0.5) * 4;
   }
 
-  hit(dmg) {
+  hit(dmg, source) {
     if (this.dead) return;
     this.hp -= dmg;
     this.flash = 0.12;
     const def = OBSTACLE_DEFS[this.type];
-    // Wooden debris on every hit, not just destruction.
     for (let i = 0; i < 3; i++) {
       const c = pick(def.particleColor);
       Game.particles.push(new Particle(this.x, this.y, rand(0.15, 0.35), 'debris', c));
     }
-    if (this.hp <= 0) this.destroy();
+    if (this.hp <= 0) this.destroy(source);
   }
 
-  destroy() {
+  destroy(source) {
     this.dead = true;
-    // Persist destruction immediately so chunk eviction can't lose the event.
     if (typeof Save !== 'undefined' && this.chunkKey !== undefined) {
       Save.recordDestroyed(this.chunkKey, this.chunkIndex);
     }
     const def = OBSTACLE_DEFS[this.type];
-    // XP burst.
-    const orbs = Math.max(1, Math.floor(def.xp / 2));
-    for (let i = 0; i < orbs; i++) {
-      const a = Math.random() * TAU, d = rand(4, 18);
-      Game.orbs.push(new XPOrb(this.x + Math.cos(a) * d, this.y + Math.sin(a) * d, Math.max(1, Math.ceil(def.xp / orbs))));
+    const autoCredit = source === 'turret' || source === 'companion';
+
+    // XP reward: orbs for the player, direct credit for turret/companion kills.
+    if (autoCredit) {
+      Game.player.gainXp(def.xp);
+      Game.particles.push(new Particle(this.x, this.y, 0.35, 'xp'));
+    } else {
+      const orbs = Math.max(1, Math.floor(def.xp / 2));
+      for (let i = 0; i < orbs; i++) {
+        const a = Math.random() * TAU, d = rand(4, 18);
+        Game.orbs.push(new XPOrb(this.x + Math.cos(a) * d, this.y + Math.sin(a) * d, Math.max(1, Math.ceil(def.xp / orbs))));
+      }
     }
+
     // Explosion particles.
     const n = this.type === 'chest' ? 24 : 10;
     for (let i = 0; i < n; i++) {
@@ -123,11 +129,18 @@ class Obstacle {
       Game.particles.push(new Particle(this.x, this.y, 0.4, 'flash'));
       Game.shake = Math.min(Game.shake + 6, 18);
     }
-    // Loot drops.
+
+    // Loot: auto-credit for turret/companion kills, scatter as Items otherwise.
     if (def.loot) {
       for (const d of def.loot) {
-        if (Math.random() < d.chance) {
-          const count = d.count || 1;
+        if (Math.random() >= d.chance) continue;
+        const count = d.count || 1;
+        if (autoCredit) {
+          if      (d.type === 'mine')   Game.player.mines      += count;
+          else if (d.type === 'turret') Game.player.turrets    += count;
+          else if (d.type === 'bot')    Game.player.companions += count;
+          else if (d.type === 'coin')   Game.player.coins      += count;
+        } else {
           for (let i = 0; i < count; i++) {
             const a = Math.random() * TAU, r = rand(10, 30);
             Game.items.push(new Item(this.x + Math.cos(a) * r, this.y + Math.sin(a) * r, d.type));

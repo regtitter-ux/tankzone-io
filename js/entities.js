@@ -241,15 +241,22 @@ class Player {
         }
       }
     }
-    if (input.abilityCompanion) {
+    // Hold-G auto-spawns a stream of bots so you don't have to mash the key.
+    // Edge-trigger is also accepted (first press fires instantly); the held
+    // path rate-limits via abilityCd.companion.
+    const wantCompanion = input.abilityCompanion || input.keys.has('companion');
+    if (wantCompanion) {
       input.abilityCompanion = false;
       if (this.companions > 0 && this.abilityCd.companion === 0) {
-        const drop = tankLocalToWorld(this.x, this.y, this.angle, -60, 0);
-        // Companions can spawn anywhere — even in a blocked spot they'll
-        // steer away on the first tick.
+        // Randomise spawn angle behind/around the tank so a burst doesn't
+        // stack at a single point.
+        const spawnAngle = this.angle + Math.PI + rand(-0.6, 0.6);
+        const spawnR    = rand(48, 76);
+        const dropX = this.x + Math.cos(spawnAngle) * spawnR;
+        const dropY = this.y + Math.sin(spawnAngle) * spawnR;
         this.companions--;
-        Game.companions.push(new Companion(drop.x, drop.y));
-        this.abilityCd.companion = 0.3;
+        Game.companions.push(new Companion(dropX, dropY));
+        this.abilityCd.companion = 0.06;  // ~16 bots/sec when held
       }
     }
   }
@@ -497,7 +504,7 @@ class Bullet {
     for (const o of near) {
       if (o.dead) continue;
       if (circleHit(this.x, this.y, this.r, o.x, o.y, o.r)) {
-        o.hit(this.damage);
+        o.hit(this.damage, this.source);
         this.alive = false;
         Game.particles.push(new Particle(this.x, this.y, 0.15, 'spark'));
         return;
