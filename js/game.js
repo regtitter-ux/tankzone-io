@@ -108,21 +108,10 @@ const Game = {
     this.canvas.addEventListener('touchend', () => { this.input.shooting = false; });
   },
 
-  start() {
-    World.reset((Math.random() * 1e9) | 0);
-    // Find a walkable spawn near origin (seed may put water at 0,0).
-    let sx = 0, sy = 0;
-    for (let ring = 0; ring < 40; ring++) {
-      let found = false;
-      for (let i = 0; i < 12; i++) {
-        const a = (i / 12) * TAU;
-        const tx = Math.cos(a) * ring * TILE;
-        const ty = Math.sin(a) * ring * TILE;
-        if (!World.blocked(tx, ty, 28)) { sx = tx; sy = ty; found = true; break; }
-      }
-      if (found) break;
-    }
-    this.player = new Player(sx, sy);
+  start(opts = {}) {
+    const snap = opts.fresh ? null : Save.read();
+
+    // Clear runtime collections regardless of load/fresh path.
     this.enemies = [];
     this.bullets = [];
     this.orbs = [];
@@ -133,14 +122,39 @@ const Game = {
     this.traders = [];
     this.particles = [];
     this.tracks = [];
-    this.cam.x = 0; this.cam.y = 0;
+
+    if (snap) {
+      // Resume: restore seed + player in the saved pose.
+      World.reset(snap.seed | 0);
+      Save.apply(snap);
+    } else {
+      // Fresh game: new seed, scan near origin for a walkable spawn.
+      World.reset((Math.random() * 1e9) | 0);
+      Save._destroyed = {}; Save._pois = {};
+      let sx = 0, sy = 0;
+      for (let ring = 0; ring < 40; ring++) {
+        let found = false;
+        for (let i = 0; i < 12; i++) {
+          const a = (i / 12) * TAU;
+          const tx = Math.cos(a) * ring * TILE;
+          const ty = Math.sin(a) * ring * TILE;
+          if (!World.blocked(tx, ty, 28)) { sx = tx; sy = ty; found = true; break; }
+        }
+        if (found) break;
+      }
+      this.player = new Player(sx, sy);
+    }
+
+    this.cam.x = this.player.x; this.cam.y = this.player.y;
     this.shake = 0;
     this.spawnTimer = 0;
     this.paused = false;
     this.running = true;
+    Save.lastAutosave = 0;
     document.getElementById('hud').classList.remove('hidden');
-    // Warm up chunks around spawn.
     this.ensureChunksAroundPlayer();
+    // Immediate first write so a refresh within seconds still resumes.
+    Save.write();
   },
 
   ensureChunksAroundPlayer() {
@@ -274,8 +288,13 @@ const Game = {
 
     if (!this.player.alive && this.running) {
       this.running = false;
+      // Clear save so the next start is a fresh run, not a corpse.
+      Save.clear();
       UI.showGameOver();
     }
+
+    // Periodic persistence.
+    Save.tick(dt);
 
     UI.update();
   },

@@ -128,9 +128,19 @@ const World = {
     this.scatterObstacles(cx, cy, obstacles, poiData ? poiData.keepOut : null);
 
     const chunk = { canvas, cx, cy };
+    // Stamp chunk key and ordered index on each obstacle so destruction events
+    // can be recorded against a stable identity (for persistent saves).
+    for (let i = 0; i < obstacles.length; i++) {
+      obstacles[i].chunkKey = k;
+      obstacles[i].chunkIndex = i;
+    }
     this.chunks.set(k, chunk);
     this.obstaclesByChunk.set(k, obstacles);
     if (poiData) this.poisByChunk.set(k, poiData);
+    if (typeof Save !== 'undefined') {
+      Save.replayDestruction(k, obstacles);
+      if (poiData) Save.replayPOI(k, poiData);
+    }
     return chunk;
   },
 

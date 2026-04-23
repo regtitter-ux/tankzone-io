@@ -46,6 +46,12 @@ button { background: linear-gradient(180deg,#238636,#1f6f2e); border: 1px solid 
 button:hover { filter: brightness(1.1); }
 button:active { transform: scale(.97); }
 
+.btns { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+button.ghost { background: transparent; border-color: #30363d; color: #c9d1d9; }
+button.ghost:hover { background: #21262d; }
+.save-info { margin-top: 14px; color: #8b949e; font-size: 12px; }
+.save-info b { color: #c9d1d9; }
+
 .cards { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
 .card { background: #0d1117; border: 1px solid rgba(255,255,255,.1); border-radius: 12px; padding: 18px 14px; text-align: center; cursor: pointer; transition: transform .1s, border-color .1s, background .1s; }
 .card:hover { transform: translateY(-4px); border-color: #58a6ff; background: #14212e; }

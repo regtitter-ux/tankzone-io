@@ -157,7 +157,6 @@ class TurretBot {
     this.bulletSpeed = 540;
     this.bulletRange = 640;
     this.sight = 520;
-    this.life = 30;
     this.alive = true;
     this.t = 0;
   }
@@ -171,8 +170,6 @@ class TurretBot {
   }
   update(dt) {
     this.t += dt;
-    this.life -= dt;
-    if (this.life <= 0) { this.destroy(); return; }
     // Find nearest enemy in sight.
     let best = null, bestD = this.sight * this.sight;
     for (const e of Game.enemies) {
@@ -189,7 +186,7 @@ class TurretBot {
         const a = this.angle;
         const mx = this.x + Math.cos(a) * 22;
         const my = this.y + Math.sin(a) * 22;
-        Game.bullets.push(new Bullet(mx, my, a, this.bulletSpeed, this.damage, this.bulletRange, 0, true));
+        Game.bullets.push(new Bullet(mx, my, a, this.bulletSpeed, this.damage, this.bulletRange, 0, true, 'turret'));
         Game.particles.push(new Particle(mx, my, 0.08, 'flash'));
         this.shootCd = 1 / this.fireRate;
       }
@@ -218,17 +215,12 @@ class TurretBot {
     ctx.beginPath(); ctx.arc(0, 0, 6, 0, TAU); ctx.fill();
     ctx.restore();
 
-    // HP bar + life indicator
+    // HP bar.
     const bw = 36, bh = 3;
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.fillRect(this.x - bw / 2, this.y - this.r - 12, bw, bh);
     ctx.fillStyle = '#58a6ff';
     ctx.fillRect(this.x - bw / 2, this.y - this.r - 12, bw * (this.hp / this.maxHp), bh);
-    const lifeFrac = Math.max(0, this.life / 30);
-    ctx.fillStyle = 'rgba(255,255,255,0.25)';
-    ctx.fillRect(this.x - bw / 2, this.y - this.r - 7, bw, 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    ctx.fillRect(this.x - bw / 2, this.y - this.r - 7, bw * lifeFrac, 2);
   }
 }
 

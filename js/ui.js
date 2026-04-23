@@ -35,14 +35,37 @@ const UI = {
   init() {
     const menu = document.getElementById('menu');
     const startBtn = document.getElementById('start-btn');
-    startBtn.addEventListener('click', () => { menu.classList.add('hidden'); Game.start(); });
+    const contBtn = document.getElementById('continue-btn');
+    const saveInfo = document.getElementById('save-info');
+    startBtn.addEventListener('click', () => {
+      if (Save.hasSave() && !confirm('Начать заново? Текущий прогресс будет удалён.')) return;
+      Save.clear();
+      menu.classList.add('hidden');
+      Game.start({ fresh: true });
+    });
+    contBtn.addEventListener('click', () => {
+      menu.classList.add('hidden');
+      Game.start();
+    });
+    // Reveal continue + summary if a save exists.
+    const snap = Save.read();
+    if (snap) {
+      contBtn.classList.remove('hidden');
+      saveInfo.classList.remove('hidden');
+      const mins = Math.round((Date.now() - snap.when) / 60000);
+      saveInfo.innerHTML =
+        `Последнее сохранение: ${mins <= 0 ? 'только что' : mins + ' мин. назад'} · ` +
+        `<b>LVL ${snap.player.level}</b> · <b>${snap.player.score}</b> очков · ` +
+        `<b>${snap.player.kills}</b> убийств`;
+    }
     document.getElementById('retry-btn').addEventListener('click', () => {
       document.getElementById('gameover').classList.add('hidden');
-      Game.start();
+      Game.start({ fresh: true });
     });
     document.getElementById('trader-close').addEventListener('click', () => this.closeTrader());
     if (new URLSearchParams(location.search).has('auto')) {
-      setTimeout(() => startBtn.click(), 80);
+      // Prefer continue on auto mode too, so testing a change verifies resume.
+      setTimeout(() => (snap ? contBtn : startBtn).click(), 80);
     }
   },
 

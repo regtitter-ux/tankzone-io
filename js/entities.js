@@ -123,6 +123,9 @@ class Player {
       this.xp -= this.xpNext;
       this.level++;
       this.xpNext = this.xpForLevel(this.level);
+      // Free consumables every level — keeps the ability loop flowing.
+      this.mines   += 100;
+      this.turrets += 100;
       UI.queueLevelUp(this.level);
     }
   }
@@ -318,17 +321,32 @@ class Enemy {
     Game.particles.push(new Particle(this.x, this.y, 0.3, 'hit'));
     if (this.hp <= 0 && this.alive) {
       this.alive = false;
-      // XP drops — split into several orbs for juicy pickup feel.
-      const orbs = 3 + Math.floor(this.xpReward / 8);
-      for (let i = 0; i < orbs; i++) {
-        const a = Math.random() * TAU, d = rand(4, 20);
-        Game.orbs.push(new XPOrb(this.x + Math.cos(a) * d, this.y + Math.sin(a) * d, Math.ceil(this.xpReward / orbs)));
-      }
-      for (let i = 0; i < 14; i++) Game.particles.push(new Particle(this.x, this.y, rand(0.4, 0.8), 'explode'));
-      if (source === 'player') {
+      const coins = 1 + Math.floor(this.tier / 2) + (Math.random() < 0.35 ? 1 : 0);
+      if (source === 'turret') {
+        // Turret kills auto-credit the player — no orbs/coins to chase.
+        Game.player.gainXp(this.xpReward);
+        Game.player.coins += coins;
         Game.player.score += this.scoreReward;
         Game.player.kills++;
+        // Floating indicator so the player sees the reward.
+        Game.particles.push(new Particle(this.x, this.y, 0.35, 'xp'));
+      } else {
+        // Normal kill path: drop orbs + coin items so they magnet to player.
+        const orbs = 3 + Math.floor(this.xpReward / 8);
+        for (let i = 0; i < orbs; i++) {
+          const a = Math.random() * TAU, d = rand(4, 20);
+          Game.orbs.push(new XPOrb(this.x + Math.cos(a) * d, this.y + Math.sin(a) * d, Math.ceil(this.xpReward / orbs)));
+        }
+        for (let i = 0; i < coins; i++) {
+          const a = Math.random() * TAU, d = rand(8, 22);
+          Game.items.push(new Item(this.x + Math.cos(a) * d, this.y + Math.sin(a) * d, 'coin'));
+        }
+        if (source === 'player') {
+          Game.player.score += this.scoreReward;
+          Game.player.kills++;
+        }
       }
+      for (let i = 0; i < 14; i++) Game.particles.push(new Particle(this.x, this.y, rand(0.4, 0.8), 'explode'));
     }
   }
 
@@ -421,7 +439,7 @@ class Enemy {
 }
 
 class Bullet {
-  constructor(x, y, angle, speed, damage, range, pierce, fromPlayer) {
+  constructor(x, y, angle, speed, damage, range, pierce, fromPlayer, source) {
     this.x = x; this.y = y;
     this.vx = Math.cos(angle) * speed;
     this.vy = Math.sin(angle) * speed;
@@ -430,6 +448,8 @@ class Bullet {
     this.range = range;
     this.pierce = pierce;
     this.fromPlayer = fromPlayer;
+    // Source tag for kill attribution: 'player', 'turret', 'enemy'.
+    this.source = source || (fromPlayer ? 'player' : 'enemy');
     this.alive = true;
     this.r = 5;
     this.trail = [];
@@ -460,7 +480,7 @@ class Bullet {
       for (const e of Game.enemies) {
         if (!e.alive) continue;
         if (circleHit(this.x, this.y, this.r, e.x, e.y, e.r)) {
-          e.takeDamage(this.damage, 'player');
+          e.takeDamage(this.damage, this.source);
           if (this.pierce-- <= 0) this.alive = false;
           Game.particles.push(new Particle(this.x, this.y, 0.15, 'spark'));
           return;

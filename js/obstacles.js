@@ -102,6 +102,10 @@ class Obstacle {
 
   destroy() {
     this.dead = true;
+    // Persist destruction immediately so chunk eviction can't lose the event.
+    if (typeof Save !== 'undefined' && this.chunkKey !== undefined) {
+      Save.recordDestroyed(this.chunkKey, this.chunkIndex);
+    }
     const def = OBSTACLE_DEFS[this.type];
     // XP burst.
     const orbs = Math.max(1, Math.floor(def.xp / 2));
