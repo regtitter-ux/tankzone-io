@@ -56,10 +56,11 @@ const Save = {
       x: c.x, y: c.y, angle: c.angle, hp: c.hp,
     }));
 
-    // POI "cleared" flags so we don't auto-respawn a herd the player wiped.
+    // POI state: cleared (wiped-out herd, can't farm) and spawned (one-shot
+    // garrisons like a military base whose enemies we've already placed).
     const pois = {};
     for (const [key, poi] of World.poisByChunk) {
-      pois[key] = { type: poi.type, cleared: !!poi.cleared };
+      pois[key] = { type: poi.type, cleared: !!poi.cleared, spawned: !!poi.spawned };
     }
     const poisMerged = { ...(this._pois || {}), ...pois };
 
@@ -166,12 +167,13 @@ const Save = {
     }
   },
 
-  // Restore POI cleared-state (so a herd wiped out in a previous session
-  // doesn't auto-respawn on return).
+  // Restore POI state (cleared / already-spawned).
   replayPOI(key, poi) {
     if (!this._pois || !poi) return;
     const rec = this._pois[key];
-    if (rec && rec.cleared) poi.cleared = true;
+    if (!rec) return;
+    if (rec.cleared) poi.cleared = true;
+    if (rec.spawned) poi.spawned = true;
   },
 
   // Mark a POI as cleared so its entities won't respawn on future chunk loads.
@@ -179,6 +181,14 @@ const Save = {
     if (!this._pois) this._pois = {};
     const rec = this._pois[chunkKey] || (this._pois[chunkKey] = {});
     rec.cleared = true;
+  },
+
+  // Mark that a one-shot POI (e.g. a military base) has been spawned so we
+  // don't re-spawn its enemy garrison on chunk rebuild.
+  markSpawned(chunkKey) {
+    if (!this._pois) this._pois = {};
+    const rec = this._pois[chunkKey] || (this._pois[chunkKey] = {});
+    rec.spawned = true;
   },
 
   // Immediate record of a destruction event. Called from Obstacle.destroy() so

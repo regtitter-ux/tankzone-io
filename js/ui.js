@@ -257,6 +257,15 @@ function renderMinimap(ctx) {
     } else if (poi.type === 'herd') {
       ctx.fillStyle = '#3fb950';
       ctx.fillRect(mx - 1.5, my - 1.5, 3, 3);
+    } else if (poi.type === 'military_base') {
+      // Crossed bars + red ring so a fortress is unmistakable on the map.
+      ctx.strokeStyle = poi.cleared ? 'rgba(125,226,160,.7)' : '#f85149';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath(); ctx.arc(mx, my, 7, 0, TAU); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(mx - 4, my - 4); ctx.lineTo(mx + 4, my + 4);
+      ctx.moveTo(mx + 4, my - 4); ctx.lineTo(mx - 4, my + 4);
+      ctx.stroke();
     }
     ctx.restore();
   }

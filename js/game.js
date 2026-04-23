@@ -177,10 +177,7 @@ const Game = {
     this.cleanupEvictedPOIs();
   },
 
-  // Ensure an entity exists for every live POI within loaded chunks. This is
-  // idempotent: traders are stationary and always present; herds respawn when
-  // re-entering their chunk UNLESS the player already wiped them (poi.cleared
-  // gets persisted in the save). No more "$ marker but no NPC" gaps.
+  // Ensure entities exist for every live POI within loaded chunks.
   spawnPOIs() {
     for (const [key, poi] of World.poisByChunk) {
       if (poi.type === 'trader') {
@@ -193,7 +190,6 @@ const Game = {
       } else if (poi.type === 'herd' && !poi.cleared) {
         const live = this.neutrals.some(n => n.chunkKey === key);
         if (!live) {
-          // Deterministic count so respawns don't farm XP arbitrarily.
           const n = 4 + Math.floor(hash2D(poi.cx, poi.cy, World.seed + 3131) * 3);
           for (let i = 0; i < n; i++) {
             const a = (i / n) * TAU, r = 46 + hash2D(poi.cx, poi.cy + i, World.seed + 42) * 70;
@@ -205,6 +201,23 @@ const Game = {
               this.neutrals.push(nt);
             }
           }
+        }
+      } else if (poi.type === 'military_base' && !poi.spawned && !poi.cleared) {
+        poi.spawned = true;
+        Save.markSpawned(key);
+        // Base enemies scale with the player's current level + the POI's
+        // designated tier bonus, so deeper-tier guards are meaningfully
+        // stronger than patrols at the perimeter.
+        const baseLvl = Math.max(
+          Math.floor(Math.hypot(poi.cx, poi.cy) / 1.4),
+          this.player ? Math.floor(this.player.level / 3) : 0
+        );
+        for (const spec of (poi.enemies || [])) {
+          const tier = Math.min(6, baseLvl + (spec.tierBonus || 0));
+          const e = new Enemy(spec.x, spec.y, tier);
+          e.chunkKey = key;
+          e.fromPOI = true;
+          this.enemies.push(e);
         }
       }
     }
@@ -265,7 +278,9 @@ const Game = {
   cullDead() {
     const maxD2 = 2500 * 2500;
     const px = this.player.x, py = this.player.y;
-    this.enemies  = this.enemies.filter(e => e.alive && dist2(e.x, e.y, px, py) < maxD2);
+    // POI-tagged enemies (military base garrisons) are exempt from the
+    // distance cull — they stay at their post until killed.
+    this.enemies  = this.enemies.filter(e => e.alive && (e.fromPOI || dist2(e.x, e.y, px, py) < maxD2));
     // Traders + neutrals are cleaned up by chunk eviction (cleanupEvictedPOIs),
     // never by distance alone — so a trader doesn't vanish because the player
     // wandered slightly out of range.
@@ -279,6 +294,13 @@ const Game = {
     this.particles = this.particles.filter(p => p.alive);
     this.tracks = this.tracks.filter(t => t.life > 0);
 
+    // Flag a military base as cleared once its garrison is wiped, so the
+    // minimap icon flips to green and the save remembers the victory.
+    for (const [key, poi] of World.poisByChunk) {
+      if (poi.type !== 'military_base' || poi.cleared || !poi.spawned) continue;
+      const live = this.enemies.some(e => e.fromPOI && e.chunkKey === key);
+      if (!live) { poi.cleared = true; Save.markCleared(key); }
+    }
   },
 
   update(dt) {

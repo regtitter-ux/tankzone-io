@@ -29,6 +29,14 @@ const OBSTACLE_DEFS = {
     particleColor: ['#9599a1', '#707278', '#54555b'],
     loot: [{ type: 'coin', chance: 0.10 }],
   },
+  wall_stone: {
+    // Reuses the rockpile sprite but scaled up and with much more HP — acts
+    // as a military-base fortification. Drops coins + a guaranteed XP sum.
+    sprite: 'rockpile', r: 28, hp: 240, xp: 14,
+    displayW: 92, displayH: 92, anchorY: 0.68,
+    particleColor: ['#9599a1', '#707278', '#54555b'],
+    loot: [{ type: 'coin', chance: 0.35 }, { type: 'coin', chance: 0.20 }],
+  },
   crate_wood: {
     sprite: 'crate_wood', r: 20, hp: 18, xp: 5,
     displayW: 56, displayH: 56, anchorY: 0.55,
