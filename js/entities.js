@@ -577,26 +577,42 @@ class XPOrb {
   }
   update(dt) {
     this.t += dt;
-    // Friction then magnet toward player when close.
     this.vx *= Math.pow(0.08, dt);
     this.vy *= Math.pow(0.08, dt);
+
+    // Companions act as proxy pickup points — anything they touch is
+    // credited to the player. Magnet+pickup seek the nearest alive picker.
     const p = Game.player;
-    if (!p.alive) return;
-    const d = dist(this.x, this.y, p.x, p.y);
+    if (!p) return;
     const magnetR = 150 + p.level * 2;
-    if (d < magnetR) {
+    const magnetR2 = magnetR * magnetR;
+    let bestX = 0, bestY = 0, bestHitR = 0, bestD2 = magnetR2, found = false;
+    if (p.alive) {
+      const d2 = dist2(this.x, this.y, p.x, p.y);
+      if (d2 < bestD2) { bestD2 = d2; bestX = p.x; bestY = p.y; bestHitR = p.r + 4; found = true; }
+    }
+    for (const c of Game.companions) {
+      if (!c.alive) continue;
+      const d2 = dist2(this.x, this.y, c.x, c.y);
+      if (d2 < bestD2) { bestD2 = d2; bestX = c.x; bestY = c.y; bestHitR = c.r + 4; found = true; }
+    }
+
+    if (found) {
+      const d = Math.sqrt(bestD2);
+      if (d < bestHitR) {
+        p.gainXp(this.value);
+        this.alive = false;
+        Game.particles.push(new Particle(this.x, this.y, 0.25, 'xp'));
+        return;
+      }
       const pull = (1 - d / magnetR) * 520 * dt;
-      const a = angleTo(this.x, this.y, p.x, p.y);
+      const a = angleTo(this.x, this.y, bestX, bestY);
       this.vx += Math.cos(a) * pull;
       this.vy += Math.sin(a) * pull;
     }
+
     this.x += this.vx * dt;
     this.y += this.vy * dt;
-    if (d < p.r + 4) {
-      p.gainXp(this.value);
-      this.alive = false;
-      Game.particles.push(new Particle(this.x, this.y, 0.25, 'xp'));
-    }
   }
   render(ctx) {
     const pulse = 4 + Math.sin(this.t * 7) * 1.2;

@@ -26,22 +26,39 @@ class Item {
     if (this.life <= 0) { this.alive = false; return; }
     this.vx *= Math.pow(0.08, dt);
     this.vy *= Math.pow(0.08, dt);
+
+    // Companions double as pickup agents — magnet + collect toward whoever's
+    // closest; the reward still lands in the player's inventory via collect().
     const p = Game.player;
-    if (!p || !p.alive) return;
-    const d = dist(this.x, this.y, p.x, p.y);
-    const mag = 170 + p.level * 2;
-    if (d < mag) {
-      const pull = (1 - d / mag) * 620 * dt;
-      const a = angleTo(this.x, this.y, p.x, p.y);
+    if (!p) return;
+    const magnetR = 170 + p.level * 2;
+    const magnetR2 = magnetR * magnetR;
+    let bestX = 0, bestY = 0, bestHitR = 0, bestD2 = magnetR2, found = false;
+    if (p.alive) {
+      const d2 = dist2(this.x, this.y, p.x, p.y);
+      if (d2 < bestD2) { bestD2 = d2; bestX = p.x; bestY = p.y; bestHitR = p.r + 6; found = true; }
+    }
+    for (const c of Game.companions) {
+      if (!c.alive) continue;
+      const d2 = dist2(this.x, this.y, c.x, c.y);
+      if (d2 < bestD2) { bestD2 = d2; bestX = c.x; bestY = c.y; bestHitR = c.r + 6; found = true; }
+    }
+
+    if (found) {
+      const d = Math.sqrt(bestD2);
+      if (d < bestHitR) {
+        this.collect();
+        this.alive = false;
+        return;
+      }
+      const pull = (1 - d / magnetR) * 620 * dt;
+      const a = angleTo(this.x, this.y, bestX, bestY);
       this.vx += Math.cos(a) * pull;
       this.vy += Math.sin(a) * pull;
     }
+
     this.x += this.vx * dt;
     this.y += this.vy * dt;
-    if (d < p.r + 6) {
-      this.collect();
-      this.alive = false;
-    }
   }
   collect() {
     const p = Game.player;
@@ -310,23 +327,39 @@ class Companion {
         const pickIdx = Math.floor(Math.random() * Math.min(enemies.length, 4));
         target = enemies[pickIdx].o;
       } else {
-        // No enemies — scan destructible obstacles in sight. Prioritise the
-        // ones with a loot table (crates, barrels, chest) since they pay out.
         target = null;
-        const nearby = World.getObstaclesNear(this.x, this.y, this.sight);
-        const loot = [], nature = [];
-        for (const o of nearby) {
-          if (o.dead) continue;
-          const d2 = dist2(this.x, this.y, o.x, o.y);
-          if (d2 >= sight2) continue;
-          const def = OBSTACLE_DEFS[o.type];
-          (def && def.loot ? loot : nature).push({ o, d2 });
+        // No fight targets — fetch loot next. XP orbs and pickup items in
+        // sight become the priority so nothing on the ground goes cold.
+        let bestPickup = null, bestD2 = sight2;
+        for (const orb of Game.orbs) {
+          if (!orb.alive) continue;
+          const d2 = dist2(this.x, this.y, orb.x, orb.y);
+          if (d2 < bestD2) { bestD2 = d2; bestPickup = orb; }
         }
-        const pool = loot.length ? loot : nature;
-        if (pool.length) {
-          pool.sort((a, b) => a.d2 - b.d2);
-          const pickIdx = Math.floor(Math.random() * Math.min(pool.length, 4));
-          target = pool[pickIdx].o;
+        for (const it of Game.items) {
+          if (!it.alive) continue;
+          const d2 = dist2(this.x, this.y, it.x, it.y);
+          if (d2 < bestD2) { bestD2 = d2; bestPickup = it; }
+        }
+        if (bestPickup) {
+          target = bestPickup;
+        } else {
+          // Still nothing — shoot destructibles so we're never idle.
+          const nearby = World.getObstaclesNear(this.x, this.y, this.sight);
+          const loot = [], nature = [];
+          for (const o of nearby) {
+            if (o.dead) continue;
+            const d2 = dist2(this.x, this.y, o.x, o.y);
+            if (d2 >= sight2) continue;
+            const def = OBSTACLE_DEFS[o.type];
+            (def && def.loot ? loot : nature).push({ o, d2 });
+          }
+          const pool = loot.length ? loot : nature;
+          if (pool.length) {
+            pool.sort((a, b) => a.d2 - b.d2);
+            const pickIdx = Math.floor(Math.random() * Math.min(pool.length, 4));
+            target = pool[pickIdx].o;
+          }
         }
       }
       this.target = target;
@@ -334,14 +367,20 @@ class Companion {
       this.reroll = rand(1.2, 2.8);
     }
 
-    // Compute the desired position.
+    // Pickups (orbs/items) are non-combatants — beeline to them and let the
+    // magnet finish the job. Everything else uses orbit motion so we keep a
+    // firing distance.
+    const isPickup = target instanceof XPOrb || target instanceof Item;
     let destX, destY;
     if (target) {
-      // Orbit the enemy at our personal fight-radius / angle.
-      destX = target.x + Math.cos(this.fightAngle) * this.fightR;
-      destY = target.y + Math.sin(this.fightAngle) * this.fightR;
+      if (isPickup) {
+        destX = target.x;
+        destY = target.y;
+      } else {
+        destX = target.x + Math.cos(this.fightAngle) * this.fightR;
+        destY = target.y + Math.sin(this.fightAngle) * this.fightR;
+      }
     } else {
-      // Crowd formation around the player at our personal slot.
       destX = p.x + Math.cos(this.followAngle) * this.followR;
       destY = p.y + Math.sin(this.followAngle) * this.followR;
     }
@@ -378,9 +417,8 @@ class Companion {
     if (sp > this.speed) { const s = this.speed / sp; this.vx *= s; this.vy *= s; }
 
     // Aim + shoot logic is independent of movement so we can strafe-shoot.
-    const aimTarget = target
-      ? { x: target.x, y: target.y }
-      : null;
+    // Pickups aren't shot — face the approach direction instead.
+    const aimTarget = (target && !isPickup) ? { x: target.x, y: target.y } : null;
     if (aimTarget) {
       const aim = angleTo(this.x, this.y, aimTarget.x, aimTarget.y);
       const diff = angleDiff(this.angle, aim);
