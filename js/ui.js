@@ -68,6 +68,8 @@ const UI = {
     document.getElementById('trader-close').addEventListener('click', () => this.closeTrader());
     // HUD shop button = open shop without needing a nearby trader NPC.
     document.getElementById('shop-btn').addEventListener('click', () => this.openShop());
+    // Build skill cells from SKILLS registry.
+    this.buildSkillCells();
     // Click the ARMY counter to recall all live companions to the player.
     document.getElementById('army-count').parentElement
       .addEventListener('click', () => UI.recallCompanions());
@@ -154,6 +156,46 @@ const UI = {
     }
   },
 
+  // Build left-side skill cell for every SKILLS entry. Called once at boot.
+  buildSkillCells() {
+    const el = document.getElementById('skills');
+    if (!el) return;
+    el.innerHTML = '';
+    SKILLS.forEach((s, i) => {
+      const cell = document.createElement('div');
+      cell.className = 'skill-cell ready';
+      cell.dataset.skillIdx = i;
+      cell.innerHTML = `
+        <div class="key">${s.keyLabel}</div>
+        <div class="icon" style="color:${i === 1 ? '#c8a8ff' : '#8fd9ff'}">${s.icon}</div>
+        <div class="cd-shade"></div>
+        <div class="name">${s.name}</div>`;
+      cell.addEventListener('click', () => { if (Game.player) Skills.tryCast(Game.player, i); });
+      el.appendChild(cell);
+    });
+  },
+
+  // Refresh cooldown overlays. Called every frame from UI.update().
+  updateSkillCells() {
+    const el = document.getElementById('skills');
+    if (!el) return;
+    const p = Game.player;
+    const cells = el.children;
+    for (let i = 0; i < cells.length; i++) {
+      const cell = cells[i];
+      const s = SKILLS[i]; if (!s) continue;
+      const cd = (p && p.skillCd && p.skillCd[s.id]) || 0;
+      if (cd > 0) {
+        cell.classList.add('cooling');
+        cell.classList.remove('ready');
+        cell.querySelector('.cd-shade').textContent = cd.toFixed(1);
+      } else {
+        cell.classList.remove('cooling');
+        cell.classList.add('ready');
+      }
+    }
+  },
+
   openShop() {
     if (!Game.running || !Game.player) return;
     if (this.activeTrader) return;
@@ -227,6 +269,7 @@ const UI = {
     let army = 0;
     for (const c of Game.companions) if (c.alive) army++;
     document.getElementById('army-count').textContent = army;
+    this.updateSkillCells();
   },
 
   showGameOver() {

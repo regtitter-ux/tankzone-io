@@ -28,6 +28,16 @@ canvas#game { display: block; position: fixed; inset: 0; cursor: crosshair; }
 #minimap-wrap { background: rgba(13,17,23,.7); border: 1px solid rgba(255,255,255,.1); border-radius: 12px; padding: 6px; }
 #minimap { display: block; border-radius: 8px; background: #0d1117; }
 
+.skills { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+.skill-cell { width: 58px; height: 58px; background: rgba(13,17,23,.8); border: 2px solid rgba(255,255,255,.15); border-radius: 12px; position: relative; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+.skill-cell .icon { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 28px; color: #fff; text-shadow: 0 0 10px rgba(140,220,255,.8); }
+.skill-cell .key { position: absolute; top: 2px; left: 5px; font-size: 10px; color: #8b949e; font-family: ui-monospace, monospace; font-weight: 700; }
+.skill-cell .name { position: absolute; left: 66px; top: 50%; transform: translateY(-50%); white-space: nowrap; font-size: 11px; color: #c9d1d9; background: rgba(13,17,23,.75); padding: 3px 8px; border-radius: 6px; opacity: 0; transition: opacity .15s; pointer-events: none; }
+.skill-cell:hover .name { opacity: 1; }
+.skill-cell .cd-shade { position: absolute; inset: 0; background: rgba(13,17,23,.72); display: none; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: 18px; font-family: ui-monospace, monospace; }
+.skill-cell.cooling .cd-shade { display: flex; }
+.skill-cell.ready { border-color: rgba(140,220,255,.5); }
+
 .abilities { display: flex; gap: 8px; margin-top: 8px; }
 .ab { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: rgba(13,17,23,.6); border: 1px solid rgba(255,255,255,.1); border-radius: 10px; font-size: 12px; }
 .ab .k { display: inline-flex; justify-content: center; align-items: center; width: 20px; height: 20px; background: #24292f; border: 1px solid rgba(255,255,255,.1); border-radius: 4px; font-family: ui-monospace, monospace; font-weight: 700; font-size: 11px; color: #8fd9ff; }

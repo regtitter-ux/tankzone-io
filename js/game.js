@@ -16,6 +16,7 @@ const Game = {
   neutrals: [],
   traders: [],
   particles: [],
+  effects: [],
   tracks: [],
 
   cam: { x: 0, y: 0 },
@@ -74,7 +75,23 @@ const Game = {
       if (code === 'KeyG') return 'companion';
       if (code === 'KeyF') return 'interact';
       if (code === 'KeyB') return 'shop';
+      // Digits 1..9 and 0 — skills. Two digits held together address skill
+      // slots 10+ (ab where a and b are the digits, in press order).
+      if (/^Digit[0-9]$/.test(code)) return 'digit' + code.slice(5);
       return null;
+    };
+    // Two-digit skill combo: if a digit is pressed while another is held, try
+    // to cast the two-digit index first. The single-digit path is still the
+    // default when no other digit is held.
+    const heldDigits = [];
+    const castDigits = (digits) => {
+      if (!this.player) return;
+      if (digits.length === 1) {
+        Skills.tryCast(this.player, parseInt(digits[0], 10) - 1);
+      } else if (digits.length >= 2) {
+        const idx = parseInt(digits.slice(0, 2).join(''), 10) - 1;
+        Skills.tryCast(this.player, idx);
+      }
     };
     window.addEventListener('keydown', e => {
       const a = codeToAction(e.code);
@@ -86,6 +103,11 @@ const Game = {
         if (a === 'companion') this.input.abilityCompanion = true;
         if (a === 'interact')  this.input.interact = true;
         if (a === 'shop')      UI.openShop();
+        if (a.startsWith('digit')) {
+          const d = a.slice(5);
+          if (!heldDigits.includes(d)) heldDigits.push(d);
+          castDigits(heldDigits);
+        }
       }
       this.input.keys.add(a);
       if (a === 'shoot') this.input.shooting = true;
@@ -97,6 +119,11 @@ const Game = {
       this.input.keys.delete(a);
       if (a === 'shoot') this.input.shooting = false;
       if (a === 'interact') this.input.interact = false;
+      if (a.startsWith('digit')) {
+        const d = a.slice(5);
+        const i = heldDigits.indexOf(d);
+        if (i >= 0) heldDigits.splice(i, 1);
+      }
     });
     // Drop all held keys if window loses focus (avoids "stuck" inputs).
     window.addEventListener('blur', () => { this.input.keys.clear(); this.input.shooting = false; });
@@ -128,6 +155,7 @@ const Game = {
     this.neutrals = [];
     this.traders = [];
     this.particles = [];
+    this.effects = [];
     this.tracks = [];
 
     if (snap) {
@@ -292,6 +320,7 @@ const Game = {
     this.turrets  = this.turrets.filter(t => t.alive);
     this.companions = this.companions.filter(c => c.alive);
     this.particles = this.particles.filter(p => p.alive);
+    this.effects = this.effects.filter(e => e.alive);
     this.tracks = this.tracks.filter(t => t.life > 0);
 
     // Flag a military base as cleared once its garrison is wiped, so the
@@ -325,6 +354,8 @@ const Game = {
       if (arr) for (const o of arr) o.update(dt);
     }
     for (const pa of this.particles) pa.update(dt);
+    for (const fx of this.effects) fx.update(dt);
+    Skills.tick(this.player, dt);
     // Fade out track marks.
     for (const t of this.tracks) t.life -= dt;
     if (this.tracks.length > 300) this.tracks.splice(0, this.tracks.length - 300);
@@ -427,6 +458,9 @@ const Game = {
 
     // Bullets on top.
     for (const b of this.bullets) b.render(ctx);
+
+    // Skill effects (sound waves, lightning arcs) above bullets.
+    for (const fx of this.effects) fx.render(ctx);
 
     // Particles on very top.
     for (const pa of this.particles) pa.render(ctx);
