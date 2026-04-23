@@ -541,6 +541,16 @@ class Bullet {
           return;
         }
       }
+      // Neutral herd tanks — pacifists, but can be farmed for bonus XP/coins.
+      for (const n of Game.neutrals) {
+        if (!n.alive) continue;
+        if (circleHit(this.x, this.y, this.r, n.x, n.y, n.r)) {
+          n.takeDamage(this.damage, this.source);
+          if (this.pierce-- <= 0) this.alive = false;
+          Game.particles.push(new Particle(this.x, this.y, 0.15, 'spark'));
+          return;
+        }
+      }
     } else {
       const p = Game.player;
       if (p.alive && circleHit(this.x, this.y, this.r, p.x, p.y, p.r)) {
