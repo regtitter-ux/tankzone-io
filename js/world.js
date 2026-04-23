@@ -59,8 +59,15 @@ function biomeAt(tx, ty, seed) {
 
 function isWalkableBiome(biome) { return biome !== BIOME.WATER; }
 
-// Draw a single ground tile from the atlas, scaled to TILE size.
-function drawTile(ctx, biome, dx, dy) {
+// Sample with a 1-pixel inset so bilinear filtering at downscaled draw sizes
+// can't pull colour from the neighbouring atlas cell. Eliminates the visible
+// dark/light seams that otherwise appear on a grass field.
+const ATLAS_INSET = 1;
+
+// Draw a single ground tile from the atlas. Tiles are randomly flipped /
+// rotated per world position (by hash) so the grass doesn't repeat as a
+// visible grid.
+function drawTile(ctx, biome, dx, dy, wtx, wty) {
   let spriteName = 'grass';
   if (biome === BIOME.WATER) spriteName = 'water';
   else if (biome === BIOME.DIRT) spriteName = 'dirt';
@@ -69,12 +76,24 @@ function drawTile(ctx, biome, dx, dy) {
   else spriteName = 'grass';
   const a = ATLAS[spriteName];
   if (atlasReady) {
-    ctx.drawImage(atlas, a.sx, a.sy, SHEET_TILE, SHEET_TILE, dx, dy, TILE, TILE);
+    const flipX = hash2D(wtx, wty, World.seed + 601) < 0.5;
+    const flipY = hash2D(wtx, wty, World.seed + 607) < 0.5;
+    const rot   = Math.floor(hash2D(wtx, wty, World.seed + 613) * 4); // 0..3
+    ctx.save();
+    ctx.translate(dx + TILE / 2, dy + TILE / 2);
+    if (rot)            ctx.rotate(rot * Math.PI / 2);
+    if (flipX || flipY) ctx.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+    ctx.drawImage(
+      atlas,
+      a.sx + ATLAS_INSET, a.sy + ATLAS_INSET,
+      SHEET_TILE - 2 * ATLAS_INSET, SHEET_TILE - 2 * ATLAS_INSET,
+      -TILE / 2, -TILE / 2, TILE, TILE
+    );
+    ctx.restore();
   } else {
     ctx.fillStyle = BIOME_TINT[biome];
     ctx.fillRect(dx, dy, TILE, TILE);
   }
-  // Tint overlays where the atlas lacks a dedicated tile.
   if (biome === BIOME.SAND) {
     ctx.fillStyle = BIOME_TINT[BIOME.SAND];
     ctx.fillRect(dx, dy, TILE, TILE);
@@ -107,8 +126,9 @@ const World = {
     // Terrain.
     for (let ty = 0; ty < CHUNK_TILES; ty++) {
       for (let tx = 0; tx < CHUNK_TILES; tx++) {
-        const b = biomeAt(baseTX + tx, baseTY + ty, this.seed);
-        drawTile(ctx, b, tx * TILE, ty * TILE);
+        const wtx = baseTX + tx, wty = baseTY + ty;
+        const b = biomeAt(wtx, wty, this.seed);
+        drawTile(ctx, b, tx * TILE, ty * TILE, wtx, wty);
       }
     }
 

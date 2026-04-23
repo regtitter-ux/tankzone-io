@@ -62,7 +62,10 @@ function drawTank(ctx, x, y, angle, type, color, scale = TANK_SCALE) {
   ctx.ellipse(4, 6, 50 * scale * 1.6, 34 * scale * 1.6, 0, 0, TAU);
   ctx.fill();
   if (sheetReady) {
-    ctx.drawImage(sheet, srcX, srcY, w, h, dx, dy, dw, dh);
+    // 1-px inset source rect — avoids pulling colour from the adjacent
+    // tank cell when the sprite is downscaled.
+    const INS = 1;
+    ctx.drawImage(sheet, srcX + INS, srcY + INS, w - 2 * INS, h - 2 * INS, dx + INS * scale, dy + INS * scale, dw - 2 * INS * scale, dh - 2 * INS * scale);
   } else {
     ctx.fillStyle = color === 'red' ? '#c23b3b' : '#3b7ec2';
     ctx.fillRect(-40, -26, 80, 52);

@@ -170,14 +170,19 @@ class Obstacle {
     ctx.fill();
     ctx.restore();
 
+    // Inset by 1px on all sides so downscaling doesn't sample the adjacent
+    // cell's pixels (visible as stray border lines around sprites).
+    const INS = 1;
+    const sx = a.sx + INS, sy = a.sy + INS;
+    const sw = SHEET_TILE - 2 * INS, sh = SHEET_TILE - 2 * INS;
     if (def.glow) {
       ctx.save();
       ctx.shadowColor = def.glow;
       ctx.shadowBlur = 18 + Math.sin(performance.now() * 0.005) * 6;
-      if (atlasReady) ctx.drawImage(atlas, a.sx, a.sy, SHEET_TILE, SHEET_TILE, dx, dy, w, h);
+      if (atlasReady) ctx.drawImage(atlas, sx, sy, sw, sh, dx, dy, w, h);
       ctx.restore();
     } else if (atlasReady) {
-      ctx.drawImage(atlas, a.sx, a.sy, SHEET_TILE, SHEET_TILE, dx, dy, w, h);
+      ctx.drawImage(atlas, sx, sy, sw, sh, dx, dy, w, h);
     } else {
       ctx.fillStyle = '#555';
       ctx.fillRect(dx, dy, w, h);
