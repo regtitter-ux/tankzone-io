@@ -195,6 +195,10 @@ const UI = {
     document.getElementById('ab-turret').textContent = p.turrets;
     document.getElementById('ab-companion').textContent = p.companions;
     document.getElementById('ab-coin').textContent = p.coins;
+    // Live companion count (army size), counts only those still alive.
+    let army = 0;
+    for (const c of Game.companions) if (c.alive) army++;
+    document.getElementById('army-count').textContent = army;
   },
 
   showGameOver() {

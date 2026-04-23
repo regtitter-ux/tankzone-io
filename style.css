@@ -9,6 +9,8 @@ canvas#game { display: block; position: fixed; inset: 0; cursor: crosshair; }
 .stat .label { font-size: 10px; letter-spacing: 1px; color: #7d8590; }
 .stat span:not(.label) { font-size: 18px; font-weight: 700; color: #fff; }
 .stat.small span:not(.label) { font-size: 14px; font-weight: 600; }
+.stat.army .label { color: #8fd9ff; }
+.stat.army span:not(.label) { color: #8fd9ff; }
 
 .xpbar { position: relative; width: 260px; height: 18px; background: rgba(255,255,255,.06); border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,.1); }
 #xp-fill { position: absolute; inset: 0; right: auto; width: 0%; background: linear-gradient(90deg,#3fb950,#2ea043); transition: width .25s; }
