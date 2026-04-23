@@ -243,11 +243,29 @@ class Companion {
     this.fireRate = 2.5;
     this.bulletSpeed = 480;
     this.bulletRange = 560;
-    this.sight = 560;               // ~ screen radius at 1280×800 / 2
-    this.followDist = 80;           // ideal distance behind player
+    this.sight = 560;
     this.speed = 320;
     this.shootCd = rand(0, 0.6);
     this.alive = true;
+
+    // Personal formation slot around the player. Each bot gets a unique angle
+    // and distance so a squad surrounds the player instead of piling on one
+    // spot. The slot rotates slowly for a living crowd feel.
+    this.followAngle = Math.random() * TAU;
+    this.followR     = rand(55, 130);
+    this.followDrift = rand(-0.8, 0.8);  // rad/sec
+
+    // Orbit parameters used when engaging an enemy: each bot takes a
+    // different angle and radius around the target, so they form a
+    // rotating cordon rather than clumping onto a single firing line.
+    this.fightAngle  = Math.random() * TAU;
+    this.fightR      = rand(140, 230);
+    this.fightDrift  = (Math.random() < 0.5 ? -1 : 1) * rand(0.8, 1.8);
+
+    // Target-reroll timer so the bot occasionally picks a new enemy and a
+    // new orbit angle — keeps motion unpredictable.
+    this.reroll = rand(0.5, 1.8);
+    this.targetId = -1;
   }
   takeDamage(dmg) {
     this.hp -= dmg;
@@ -260,19 +278,97 @@ class Companion {
     const p = Game.player;
     if (!p) return;
 
-    // Find nearest enemy within sight; aim at it, otherwise face player dir.
-    let best = null, bestD = this.sight * this.sight;
-    for (const e of Game.enemies) {
-      if (!e.alive) continue;
-      const d2 = dist2(this.x, this.y, e.x, e.y);
-      if (d2 < bestD) { bestD = d2; best = e; }
+    this.followAngle += this.followDrift * dt;
+    this.fightAngle  += this.fightDrift  * dt;
+    this.reroll      -= dt;
+
+    // Pick a target enemy: either our current one if still alive/nearby, or
+    // a new one when the reroll timer ticks down. Rerolls keep the squad
+    // spread across several enemies rather than dogpiling one.
+    let target = null;
+    if (this.targetId >= 0) {
+      const current = Game.enemies[this.targetId];
+      if (current && current.alive && dist2(this.x, this.y, current.x, current.y) < this.sight * this.sight) {
+        target = current;
+      }
     }
-    if (best) {
-      const aim = angleTo(this.x, this.y, best.x, best.y);
+    if (!target || this.reroll <= 0) {
+      // Sample a few random enemies instead of always picking nearest —
+      // prevents every bot ganging up on the same target.
+      let best = null, bestScore = Infinity;
+      const inSight = [];
+      for (let i = 0; i < Game.enemies.length; i++) {
+        const e = Game.enemies[i];
+        if (!e.alive) continue;
+        const d2 = dist2(this.x, this.y, e.x, e.y);
+        if (d2 < this.sight * this.sight) inSight.push({ e, i, d2 });
+      }
+      if (inSight.length) {
+        // Weighted pick: closer is more likely, but not deterministic.
+        const pickIdx = Math.floor(Math.random() * Math.min(inSight.length, 4));
+        inSight.sort((a, b) => a.d2 - b.d2);
+        const chosen = inSight[pickIdx] || inSight[0];
+        target = chosen.e; this.targetId = chosen.i;
+        this.fightAngle = Math.random() * TAU;
+      } else {
+        this.targetId = -1;
+      }
+      this.reroll = rand(1.2, 2.8);
+    }
+
+    // Compute the desired position.
+    let destX, destY;
+    if (target) {
+      // Orbit the enemy at our personal fight-radius / angle.
+      destX = target.x + Math.cos(this.fightAngle) * this.fightR;
+      destY = target.y + Math.sin(this.fightAngle) * this.fightR;
+    } else {
+      // Crowd formation around the player at our personal slot.
+      destX = p.x + Math.cos(this.followAngle) * this.followR;
+      destY = p.y + Math.sin(this.followAngle) * this.followR;
+    }
+
+    // Separation: push away from other companions that are too close.
+    let sepX = 0, sepY = 0;
+    for (const c of Game.companions) {
+      if (c === this || !c.alive) continue;
+      const dx = this.x - c.x, dy = this.y - c.y;
+      const d2 = dx * dx + dy * dy;
+      const sepR = 36;
+      if (d2 > 0 && d2 < sepR * sepR) {
+        const d = Math.sqrt(d2);
+        const push = (1 - d / sepR);
+        sepX += (dx / d) * push;
+        sepY += (dy / d) * push;
+      }
+    }
+
+    const toX = destX - this.x, toY = destY - this.y;
+    const dLen = Math.hypot(toX, toY);
+    // Desired velocity: head toward slot; clamp to max speed; add separation.
+    const desSpeed = this.speed * clamp(dLen / 90, 0, 1);
+    const ux = dLen > 0.1 ? toX / dLen : 0;
+    const uy = dLen > 0.1 ? toY / dLen : 0;
+    const desVX = ux * desSpeed + sepX * this.speed * 0.9;
+    const desVY = uy * desSpeed + sepY * this.speed * 0.9;
+
+    // Smooth accel toward desired velocity.
+    const k = Math.min(1, dt * 7);
+    this.vx += (desVX - this.vx) * k;
+    this.vy += (desVY - this.vy) * k;
+    const sp = Math.hypot(this.vx, this.vy);
+    if (sp > this.speed) { const s = this.speed / sp; this.vx *= s; this.vy *= s; }
+
+    // Aim + shoot logic is independent of movement so we can strafe-shoot.
+    const aimTarget = target
+      ? { x: target.x, y: target.y }
+      : null;
+    if (aimTarget) {
+      const aim = angleTo(this.x, this.y, aimTarget.x, aimTarget.y);
       const diff = angleDiff(this.angle, aim);
       this.angle += clamp(diff, -6 * dt, 6 * dt);
       this.shootCd -= dt;
-      if (Math.abs(diff) < 0.25 && this.shootCd <= 0) {
+      if (Math.abs(diff) < 0.3 && this.shootCd <= 0) {
         const a = this.angle;
         const mx = this.x + Math.cos(a) * 18;
         const my = this.y + Math.sin(a) * 18;
@@ -281,27 +377,15 @@ class Companion {
         this.shootCd = 1 / this.fireRate;
       }
     } else {
-      // Face the direction we're moving so the follow looks natural.
-      const moveAng = angleTo(0, 0, this.vx, this.vy);
+      // Face our travel direction when idling in formation.
       if (Math.hypot(this.vx, this.vy) > 20) {
+        const moveAng = Math.atan2(this.vy, this.vx);
         const diff = angleDiff(this.angle, moveAng);
         this.angle += clamp(diff, -4 * dt, 4 * dt);
       }
     }
 
-    // Follow behaviour — steer to a trailing spot behind the player.
-    const followX = p.x - Math.cos(p.angle) * this.followDist;
-    const followY = p.y - Math.sin(p.angle) * this.followDist;
-    const toX = followX - this.x, toY = followY - this.y;
-    const d = Math.hypot(toX, toY);
-    const target = d > 2 ? this.speed * Math.min(1, d / 120) : 0;
-    if (d > 0) {
-      const ax = (toX / d) * target - this.vx;
-      const ay = (toY / d) * target - this.vy;
-      this.vx += ax * Math.min(1, dt * 6);
-      this.vy += ay * Math.min(1, dt * 6);
-    }
-    // Don't overlap the player, don't walk into water/obstacles.
+    // Movement with slide-along-wall behaviour.
     const nx = this.x + this.vx * dt, ny = this.y + this.vy * dt;
     if (!World.blocked(nx, this.y, this.r)) this.x = nx; else this.vx *= -0.3;
     if (!World.blocked(this.x, ny, this.r)) this.y = ny; else this.vy *= -0.3;
